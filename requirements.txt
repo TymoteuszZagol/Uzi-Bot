@@ -1,7 +1,4 @@
 discord.py
-asyncio
-json
-os
 random
 re
 io
