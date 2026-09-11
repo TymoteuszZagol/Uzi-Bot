@@ -1,5 +1,5 @@
-discord
-discord.ext
+discord==2.6.3
+discord.ext==2.6.3
 asyncio
 json
 os
