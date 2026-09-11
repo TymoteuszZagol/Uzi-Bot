@@ -1,1 +1,8 @@
-discord.py
+discord
+discord.ext
+asyncio
+json
+os
+random
+re
+io
