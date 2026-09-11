@@ -1,4 +1,4 @@
-import discord
+import discord.py
 import discord.ext
 import asyncio
 import json
