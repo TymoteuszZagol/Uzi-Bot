@@ -62,11 +62,19 @@ TICKET_CATEGORY_IDS = [
 ]
 
 
-LEVEL_XP_FILE = "levels.json"
-LEVEL_ROLES_FILE = "level_roles.json"
-INVITES_FILE = "invites.json"
-TICKETS_FILE = "tickets.json"
-TRUST_FILE = "trust_votes.json"
+# =========================================================
+# DATA FILES
+# =========================================================
+
+DATA_DIR = "/app/data"
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+LEVEL_XP_FILE = os.path.join(DATA_DIR, "levels.json")
+LEVEL_ROLES_FILE = os.path.join(DATA_DIR, "level_roles.json")
+INVITES_FILE = os.path.join(DATA_DIR, "invites.json")
+TICKETS_FILE = os.path.join(DATA_DIR, "tickets.json")
+TRUST_FILE = os.path.join(DATA_DIR, "trust_votes.json")
 
 
 # =========================================================
@@ -89,8 +97,37 @@ bot = commands.Bot(
 # FILE HELPERS
 # =========================================================
 
+# =========================================================
+# FILE HELPERS
+# =========================================================
+
+DATA_DIR = "/app/data"
+
+
+def initialize_data_file(filename, default):
+    """
+    Creates a JSON file in the Railway Volume if it doesn't exist.
+    """
+
+    if os.path.exists(filename):
+        return
+
+    try:
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(
+                default,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+    except OSError as e:
+        print(f"Nie udało się utworzyć {filename}: {e}")
+
+
 def load_json(filename, default):
     if not os.path.exists(filename):
+        initialize_data_file(filename, default)
         return default
 
     try:
@@ -99,6 +136,20 @@ def load_json(filename, default):
 
     except (json.JSONDecodeError, OSError):
         return default
+
+
+def save_json(filename, data):
+    try:
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(
+                data,
+                file,
+                indent=4,
+                ensure_ascii=False
+            )
+
+    except OSError as e:
+        print(f"Nie udało się zapisać {filename}: {e}")
 
 
 def save_json(filename, data):
