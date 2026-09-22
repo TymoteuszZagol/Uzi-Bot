@@ -1,4 +1,3 @@
-```python
 import asyncio
 import io
 import json
@@ -1986,4 +1985,3 @@ if not TOKEN:
 # =========================================================
 
 bot.run(TOKEN)
-```
