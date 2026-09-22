@@ -1,31 +1,28 @@
-import discord
-from discord.ext import commands
 import asyncio
+import io
 import json
 import os
 import re
-import io
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
+import discord
+from discord.ext import commands
+
+
+# =========================================================
+# CONFIG
+# =========================================================
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-
 PREFIX = "!"
-
-# =========================================================
-# EMBED COLOR
-# =========================================================
-
 EMBED_COLOR = discord.Color(0x279A08)
 
-
-# =========================================================
-# IDS
-# =========================================================
-
-OWNER_ROLE_ID = 1546584318615355403
+# Staff role. This is the role that was previously named OWNER_ROLE_ID.
+STAFF_ROLE_ID = 1546584318615355403
 VERIFIED_ROLE_ID = 1546585369036718180
 TT_MOD_ROLE_ID = 1546584450765299864
+TECHNIK_ROLE_ID = 1551677652321046721
+ORDER_PING_ROLE_ID = 1551678224734359595
 
 VERIFICATION_CHANNEL_ID = 1546587855600619650
 PAYMENT_CHANNEL_ID = 1546579970040533032
@@ -56,26 +53,19 @@ BLACKLIST_CATEGORY_ID = 1547264870733316167
 
 # Ticket categories
 PURCHASES_CATEGORY_ID = 1546963814854041601
-REPORTS_CATEGORY_ID = 1546963863931719690
+REPORTS_CATEGORY_ID = 1546963924572971009
 QUESTIONS_ERRORS_CATEGORY_ID = 1551661373040365679
 OTHER_CATEGORY_ID = 1546964017032069210
 
-TICKET_CATEGORY_IDS = [
+TICKET_CATEGORY_IDS = {
     PURCHASES_CATEGORY_ID,
     REPORTS_CATEGORY_ID,
     QUESTIONS_ERRORS_CATEGORY_ID,
-    OTHER_CATEGORY_ID
-]
-
-
-# =========================================================
-# DATA FILES
-# =========================================================
+    OTHER_CATEGORY_ID,
+}
 
 DATA_DIR = "/app/data"
-
 os.makedirs(DATA_DIR, exist_ok=True)
-
 TICKETS_FILE = os.path.join(DATA_DIR, "tickets.json")
 
 
@@ -91,16 +81,15 @@ intents.presences = True
 bot = commands.Bot(
     command_prefix=PREFIX,
     intents=intents,
-    help_command=None
+    help_command=None,
 )
 
 
 # =========================================================
-# FILE HELPERS
+# JSON
 # =========================================================
 
 def initialize_data_file(filename, default):
-
     if os.path.exists(filename):
         return
 
@@ -110,105 +99,85 @@ def initialize_data_file(filename, default):
                 default,
                 file,
                 indent=4,
-                ensure_ascii=False
+                ensure_ascii=False,
             )
-
-    except OSError as e:
-        print(f"Nie udało się utworzyć {filename}: {e}")
+    except OSError as exc:
+        print(f"Nie udało się utworzyć {filename}: {exc}")
 
 
 def load_json(filename, default):
-
     if not os.path.exists(filename):
-        initialize_data_file(
-            filename,
-            default
-        )
+        initialize_data_file(filename, default)
         return default
 
     try:
         with open(filename, "r", encoding="utf-8") as file:
-            return json.load(file)
-
+            data = json.load(file)
+            return data
     except (json.JSONDecodeError, OSError):
         return default
 
 
 def save_json(filename, data):
-
     try:
         with open(filename, "w", encoding="utf-8") as file:
             json.dump(
                 data,
                 file,
                 indent=4,
-                ensure_ascii=False
+                ensure_ascii=False,
             )
+    except OSError as exc:
+        print(f"Nie udało się zapisać {filename}: {exc}")
 
-    except OSError as e:
-        print(f"Nie udało się zapisać {filename}: {e}")
 
-
-# =========================================================
-# DATA
-# =========================================================
-
-tickets_data = load_json(
-    TICKETS_FILE,
-    {}
-)
+tickets_data = load_json(TICKETS_FILE, {})
 
 
 # =========================================================
-# PERMISSION CHECKS
+# PERMISSIONS
 # =========================================================
 
-def has_staff_role(member):
+def has_role(member, role_id):
+    return any(role.id == role_id for role in member.roles)
 
+
+def is_staff_member(member):
     return (
-        any(
-            role.id == OWNER_ROLE_ID
-            for role in member.roles
-        )
-        or
-        any(
-            role.id == TT_MOD_ROLE_ID
-            for role in member.roles
-        )
+        has_role(member, STAFF_ROLE_ID)
+        or has_role(member, TT_MOD_ROLE_ID)
+        or has_role(member, TECHNIK_ROLE_ID)
     )
 
 
-def is_owner():
+def is_staff_or_mod(member):
+    return (
+        has_role(member, STAFF_ROLE_ID)
+        or has_role(member, TT_MOD_ROLE_ID)
+        or has_role(member, TECHNIK_ROLE_ID)
+    )
 
+
+def command_check(role_ids):
     async def predicate(ctx):
-
         if ctx.guild is None:
             return False
 
-        role = ctx.guild.get_role(
-            OWNER_ROLE_ID
-        )
-
-        if role is None:
-            return False
-
-        return role in ctx.author.roles
-
-    return commands.check(predicate)
-
-
-def is_staff():
-
-    async def predicate(ctx):
-
-        if ctx.guild is None:
-            return False
-
-        return has_staff_role(
-            ctx.author
+        return any(
+            has_role(ctx.author, role_id)
+            for role_id in role_ids
         )
 
     return commands.check(predicate)
+
+
+staff_only = command_check(
+    {STAFF_ROLE_ID, TECHNIK_ROLE_ID}
+)
+
+staff_mod_only = command_check(
+    {STAFF_ROLE_ID, TT_MOD_ROLE_ID, TECHNIK_ROLE_ID}
+)
 
 
 # =========================================================
@@ -216,96 +185,74 @@ def is_staff():
 # =========================================================
 
 class VerifyView(discord.ui.View):
-
     def __init__(self):
-
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="Verify",
+        label="Zweryfikuj",
         style=discord.ButtonStyle.success,
-        custom_id="verify_button"
+        custom_id="verify_button",
     )
     async def verify(
         self,
         interaction: discord.Interaction,
-        button: discord.ui.Button
+        button: discord.ui.Button,
     ):
-
         guild = interaction.guild
 
         if guild is None:
             return
 
-        role = guild.get_role(
-            VERIFIED_ROLE_ID
-        )
+        role = guild.get_role(VERIFIED_ROLE_ID)
 
         if role is None:
-
             await interaction.response.send_message(
-                "The uzytkownik role could not be found.",
-                ephemeral=True
+                "Nie znaleziono roli uzytkownik.",
+                ephemeral=True,
             )
-
             return
 
         if role in interaction.user.roles:
-
             await interaction.response.send_message(
-                "You are already verified.",
-                ephemeral=True
+                "Jesteś już zweryfikowany.",
+                ephemeral=True,
             )
-
             return
 
         try:
-
             await interaction.user.add_roles(
                 role,
-                reason="User verification"
+                reason="User verification",
             )
-
             await interaction.response.send_message(
-                "You have been successfully verified.",
-                ephemeral=True
+                "Pomyślnie się zweryfikowałeś.",
+                ephemeral=True,
             )
-
         except discord.Forbidden:
-
             await interaction.response.send_message(
-                "I do not have permission to give you the uzytkownik role.",
-                ephemeral=True
+                "Bot nie ma uprawnień do nadania roli uzytkownik.",
+                ephemeral=True,
             )
 
 
-@bot.command()
-@is_owner()
+@bot.command(name="weryfikacja")
+@staff_only
 async def weryfikacja(ctx):
-
-    channel = bot.get_channel(
-        VERIFICATION_CHANNEL_ID
-    )
+    channel = bot.get_channel(VERIFICATION_CHANNEL_ID)
 
     if channel is None:
-
-        await ctx.send(
-            "Verification channel not found."
-        )
-
+        await ctx.send("Nie znaleziono kanału weryfikacji.")
         return
 
     embed = discord.Embed(
-        title="Uzi Shop Verification",
-        description="Click the button below to verify yourself.",
-        color=EMBED_COLOR
+        title="Weryfikacja",
+        description="Kliknij przycisk poniżej, aby się zweryfikować.",
+        color=EMBED_COLOR,
     )
 
     await channel.send(
         embed=embed,
-        view=VerifyView()
+        view=VerifyView(),
     )
 
     try:
@@ -318,20 +265,13 @@ async def weryfikacja(ctx):
 # PAYMENTS
 # =========================================================
 
-@bot.command()
-@is_owner()
-async def platnosc(ctx):
-
-    channel = bot.get_channel(
-        PAYMENT_CHANNEL_ID
-    )
+@bot.command(name="payments")
+@staff_only
+async def payments(ctx):
+    channel = bot.get_channel(PAYMENT_CHANNEL_ID)
 
     if channel is None:
-
-        await ctx.send(
-            "Payment channel not found."
-        )
-
+        await ctx.send("Nie znaleziono kanału płatności.")
         return
 
     embed = discord.Embed(
@@ -341,12 +281,10 @@ async def platnosc(ctx):
             "(ewentualnie przelew krajowy)\n\n"
             "⚠️ **Paysafecard nie jest akceptowany**"
         ),
-        color=EMBED_COLOR
+        color=EMBED_COLOR,
     )
 
-    await channel.send(
-        embed=embed
-    )
+    await channel.send(embed=embed)
 
     try:
         await ctx.message.delete()
@@ -358,20 +296,13 @@ async def platnosc(ctx):
 # MEDIA
 # =========================================================
 
-@bot.command()
-@is_owner()
+@bot.command(name="media")
+@staff_only
 async def media(ctx):
-
-    channel = bot.get_channel(
-        SOCIALS_CHANNEL_ID
-    )
+    channel = bot.get_channel(SOCIALS_CHANNEL_ID)
 
     if channel is None:
-
-        await ctx.send(
-            "Media channel not found."
-        )
-
+        await ctx.send("Nie znaleziono kanału social media.")
         return
 
     embed = discord.Embed(
@@ -382,12 +313,10 @@ async def media(ctx):
             "<:tg:1546623148563107973> **Telegram:** "
             "[uzigoat](https://t.me/uzigoat)"
         ),
-        color=EMBED_COLOR
+        color=EMBED_COLOR,
     )
 
-    await channel.send(
-        embed=embed
-    )
+    await channel.send(embed=embed)
 
     try:
         await ctx.message.delete()
@@ -399,10 +328,9 @@ async def media(ctx):
 # CLEAR
 # =========================================================
 
-@bot.command()
-@is_staff()
+@bot.command(name="clear")
+@staff_mod_only
 async def clear(ctx, *args):
-
     if not args:
         return
 
@@ -410,31 +338,23 @@ async def clear(ctx, *args):
     target = None
 
     for arg in args:
-
         if arg.lower() == "all":
-
             amount = "all"
 
         elif arg.isdigit():
-
             amount = int(arg)
 
         elif arg.startswith("<@"):
-
             try:
-
                 target = await commands.MemberConverter().convert(
                     ctx,
-                    arg
+                    arg,
                 )
-
             except commands.BadArgument:
-
                 await ctx.send(
-                    "User not found.",
-                    delete_after=3
+                    "Nie znaleziono użytkownika.",
+                    delete_after=3,
                 )
-
                 return
 
     try:
@@ -442,36 +362,25 @@ async def clear(ctx, *args):
     except discord.Forbidden:
         pass
 
-    if target is None:
+    try:
+        if target is None:
+            if amount == "all":
+                await ctx.channel.purge(limit=None)
 
-        if amount == "all":
+            elif isinstance(amount, int):
+                await ctx.channel.purge(limit=amount)
 
-            await ctx.channel.purge(
-                limit=None
-            )
+            return
 
-        elif isinstance(amount, int):
+        deleted_count = 0
 
-            await ctx.channel.purge(
-                limit=amount
-            )
-
-        return
-
-    deleted_count = 0
-
-    async for message in ctx.channel.history(
-        limit=None
-    ):
-
-        if message.author.id == target.id:
+        async for message in ctx.channel.history(limit=None):
+            if message.author.id != target.id:
+                continue
 
             try:
-
                 await message.delete()
-
                 deleted_count += 1
-
             except discord.Forbidden:
                 pass
 
@@ -481,103 +390,93 @@ async def clear(ctx, *args):
             ):
                 break
 
+    except discord.Forbidden:
+        await ctx.send(
+            "Bot nie ma uprawnień do usuwania wiadomości.",
+            delete_after=4,
+        )
+
 
 # =========================================================
 # MUTE
 # =========================================================
 
-@bot.command()
-@is_staff()
-async def mute(
-    ctx,
-    member: discord.Member,
-    duration: str
-):
-
+@bot.command(name="mute")
+@staff_mod_only
+async def mute(ctx, member: discord.Member, duration: str):
     if member == ctx.author:
-
         await ctx.send(
-            "You cannot mute yourself.",
-            delete_after=3
+            "Nie możesz wyciszyć siebie.",
+            delete_after=3,
         )
-
         return
 
     if member == ctx.guild.me:
-
         await ctx.send(
-            "I cannot mute myself.",
-            delete_after=3
+            "Nie mogę wyciszyć siebie.",
+            delete_after=3,
         )
-
         return
 
     match = re.fullmatch(
         r"(\d+)(s|m|h|d)",
-        duration.lower()
+        duration.lower(),
     )
 
     if not match:
-
         await ctx.send(
-            "Invalid duration. Use formats such as 5s, 10m, 2h or 3d.",
-            delete_after=4
+            "Nieprawidłowy czas. Użyj np. 5s, 10m, 2h albo 3d.",
+            delete_after=4,
         )
-
         return
 
-    value = int(
-        match.group(1)
-    )
-
+    value = int(match.group(1))
     unit = match.group(2)
 
     multipliers = {
         "s": 1,
         "m": 60,
         "h": 3600,
-        "d": 86400
+        "d": 86400,
     }
 
     seconds = value * multipliers[unit]
 
     if seconds > 28 * 86400:
-
         await ctx.send(
-            "The maximum timeout duration is 28 days.",
-            delete_after=4
+            "Maksymalny czas timeoutu to 28 dni.",
+            delete_after=4,
         )
-
         return
 
     if member.top_role >= ctx.author.top_role:
-
         await ctx.send(
-            "You cannot mute a user with an equal or higher role.",
-            delete_after=4
+            "Nie możesz wyciszyć osoby z równą lub wyższą rolą.",
+            delete_after=4,
         )
-
         return
 
-    if member.top_role >= ctx.guild.me.top_role:
+    bot_member = ctx.guild.me
 
+    if bot_member is None:
+        return
+
+    if member.top_role >= bot_member.top_role:
         await ctx.send(
-            "I cannot mute a user with an equal or higher role than mine.",
-            delete_after=4
+            "Bot nie może wyciszyć osoby z równą lub wyższą rolą od swojej.",
+            delete_after=4,
         )
-
         return
 
     try:
-
         await member.timeout(
             timedelta(seconds=seconds),
-            reason=f"Muted by {ctx.author}"
+            reason=f"Muted by {ctx.author}",
         )
 
         await ctx.send(
-            f"{member.mention} has been muted for **{duration}**.",
-            delete_after=4
+            f"{member.mention} został wyciszony na **{duration}**.",
+            delete_after=4,
         )
 
         try:
@@ -586,10 +485,9 @@ async def mute(
             pass
 
     except discord.Forbidden:
-
         await ctx.send(
-            "I do not have permission to timeout this user.",
-            delete_after=4
+            "Bot nie ma uprawnień do timeoutu tej osoby.",
+            delete_after=4,
         )
 
 
@@ -597,21 +495,18 @@ async def mute(
 # INVITE REWARDS
 # =========================================================
 
-@bot.command()
-@is_owner()
+@bot.command(name="invites")
+@staff_only
 async def invites(ctx):
-
     embed = discord.Embed(
         title="🎁 • NAGRODY ZA ZAPROSZENIA",
         description=(
             "Każde 10 zaproszeń = 10 zł do wydania na naszym serwerze"
         ),
-        color=EMBED_COLOR
+        color=EMBED_COLOR,
     )
 
-    await ctx.send(
-        embed=embed
-    )
+    await ctx.send(embed=embed)
 
     try:
         await ctx.message.delete()
@@ -620,395 +515,268 @@ async def invites(ctx):
 
 
 # =========================================================
-# TICKET SYSTEM
+# TICKETS
 # =========================================================
 
 CATEGORY_INFO = {
-
     "Zamówienia": {
         "emoji": "🛒",
-        "prefix": "zamowienie",
+        "word": "zamowienie",
         "category_id": PURCHASES_CATEGORY_ID,
         "subcategories": {
             "Pytanie dotyczące zamówienia": "pytanie",
             "Kupno konta NFA ze stock": "nfa",
             "Kupno konta FA ze stock": "fa",
             "Kupno konta z live": "live",
-            "Konto na zamówienie": "custom"
-        }
+            "Konto na zamówienie": "custom",
+        },
     },
-
     "Zgłoszenia": {
         "emoji": "🚨",
-        "prefix": "zgloszenie",
+        "word": "zgloszenie",
         "category_id": REPORTS_CATEGORY_ID,
         "subcategories": {
             "Zgłoś użytkownika": "uzytkownik",
             "Zgłoś scam": "scam",
-            "Inne zgłoszenie": "inne"
-        }
+            "Inne zgłoszenie": "inne",
+        },
     },
-
     "Pytanie / Błąd": {
         "emoji": "❓",
-        "prefix": "problem",
+        "word": "problem",
         "category_id": QUESTIONS_ERRORS_CATEGORY_ID,
         "subcategories": {
             "Pytanie": "pytanie",
             "Błąd serwera": "serwer",
             "Problem z botem": "bot",
-            "Inne": "inne"
-        }
+            "Inne": "inne",
+        },
     },
-
     "Inne": {
         "emoji": "📌",
-        "prefix": "inne",
+        "word": "inne",
         "category_id": OTHER_CATEGORY_ID,
         "subcategories": {
             "Współpraca": "wspolpraca",
             "Propozycja": "propozycja",
-            "Inne": "inne"
-        }
-    }
+            "Inne": "inne",
+        },
+    },
 }
 
 
 SUBCATEGORY_MESSAGES = {
-
-    # ZAMÓWIENIA
-
-    "Pytanie dotyczące zamówienia": (
-        "**Pytanie dotyczące zamówienia**\n"
-        "Opisz swoje pytanie dotyczące zamówienia."
-    ),
-
-    "Kupno konta NFA ze stock": (
-        "**Kupno konta NFA**\n"
-        "Podaj numer zamówienia produktu, który chcesz kupić.\n"
-        f"Numer zamówienia znajdziesz obok produktu na <#{STOCK_CHANNEL_ID}>."
-    ),
-
-    "Kupno konta FA ze stock": (
-        "**Kupno konta FA**\n"
-        "Podaj numer zamówienia produktu, który chcesz kupić.\n"
-        f"Numer zamówienia znajdziesz obok produktu na <#{STOCK_CHANNEL_ID}>."
-    ),
-
-    "Kupno konta z live": (
-        "**Kupno konta z live**\n"
-        "Podaj nazwę lub numer produktu, który chcesz kupić z live."
-    ),
-
-    "Konto na zamówienie": (
-        "**Konto na zamówienie**\n"
-        "Opisz dokładnie, jakiego konta potrzebujesz."
-    ),
-
-    # ZGŁOSZENIA
-
-    "Zgłoś użytkownika": (
-        "**Zgłoszenie użytkownika**\n"
-        "Podaj osobę, którą chcesz zgłosić, oraz dokładnie opisz sytuację. "
-        "Dodaj dowody, jeśli je posiadasz."
-    ),
-
-    "Zgłoś scam": (
-        "**Zgłoszenie scamu**\n"
-        "Opisz sytuację i dodaj wszystkie posiadane dowody."
-    ),
-
-    "Inne zgłoszenie": (
-        "**Zgłoszenie**\n"
-        "Opisz dokładnie, czego dotyczy zgłoszenie i dodaj dowody, jeśli je posiadasz."
-    ),
-
-    # PYTANIE / BŁĄD
-
-    "Pytanie": (
-        "**Pytanie**\n"
-        "Opisz dokładnie swoje pytanie."
-    ),
-
-    "Błąd serwera": (
-        "**Błąd serwera**\n"
-        "Opisz dokładnie występujący błąd i dodaj dowody, jeśli je posiadasz."
-    ),
-
-    "Problem z botem": (
-        "**Problem z botem**\n"
-        "Opisz dokładnie problem z botem i dodaj dowody, jeśli je posiadasz."
-    ),
-
-    "Inne": (
-        "**Pytanie / Problem**\n"
-        "Opisz dokładnie, w czym potrzebujesz pomocy."
-    ),
-
-    # INNE
-
-    "Współpraca": (
-        "**Współpraca**\n"
-        "Opisz, czego ma dotyczyć współpraca i co masz na myśli."
-    ),
-
-    "Propozycja": (
-        "**Propozycja**\n"
-        "Opisz dokładnie swoją propozycję."
-    )
+    "Zamówienie": "**Zamówienie**\nOpisz, czego potrzebujesz w związku z zamówieniem.",
+    "NFA": "**NFA**\nOpisz, jakie konto NFA chcesz kupić.",
+    "FA": "**FA**\nOpisz, jakie konto FA chcesz kupić.",
+    "Live": "**Live**\nNapisz, jakie konto chcesz kupić z live.",
+    "Custom": "**Custom**\nOpisz, jakie konto chcesz zamówić.",
+    "Użytkownik": "**Użytkownik**\nOpisz, kogo chcesz zgłosić i dodaj dowody, jeśli je posiadasz.",
+    "Scam": "**Scam**\nOpisz sytuację i dodaj dowody, jeśli je posiadasz.",
+    "Zgłoszenie": "**Zgłoszenie**\nOpisz dokładnie, czego dotyczy zgłoszenie.",
+    "Pytanie": "**Pytanie**\nOpisz dokładnie swoje pytanie.",
+    "Błąd": "**Błąd**\nOpisz dokładnie występujący błąd i dodaj dowody, jeśli je posiadasz.",
+    "Bot": "**Bot**\nOpisz dokładnie problem z botem i dodaj dowody, jeśli je posiadasz.",
+    "Współpraca": "**Współpraca**\nOpisz, czego ma dotyczyć współpraca.",
+    "Propozycja": "**Propozycja**\nOpisz dokładnie swoją propozycję.",
+    "Inne": "**Inne**\nOpisz dokładnie, czego potrzebujesz.",
 }
 
 
 def count_open_tickets(user_id):
-
     user_id = str(user_id)
 
     return sum(
         1
         for ticket in tickets_data.values()
         if str(ticket.get("author_id")) == user_id
+        and ticket.get("open", True)
     )
 
 
 def get_ticket_category(category_name):
-
-    info = CATEGORY_INFO.get(
-        category_name
-    )
+    info = CATEGORY_INFO.get(category_name)
 
     if info is None:
         return None
 
-    return bot.get_channel(
-        info["category_id"]
-    )
+    channel = bot.get_channel(info["category_id"])
+
+    if isinstance(channel, discord.CategoryChannel):
+        return channel
+
+    return None
 
 
-def build_ticket_name(
-    category_name,
-    member,
-    subcategory=None
-):
+def clean_username(username):
+    username = username.lower()
 
-    info = CATEGORY_INFO[
-        category_name
-    ]
-
-    sub_slug = info["subcategories"].get(
-        subcategory,
-        "inne"
-    )
-
-    safe_name = re.sub(
+    username = re.sub(
         r"[^a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ_-]",
         "-",
-        member.display_name.lower()
+        username,
     )
 
-    safe_name = safe_name.strip(
-        "-"
-    )
+    username = username.strip("-")
 
-    if not safe_name:
-        safe_name = str(
-            member.id
-        )
+    if not username:
+        return "user"
 
+    return username[:70]
+
+
+def build_ticket_name(subcategory, member):
+    names = {
+        "Zamówienie": "zamowienie",
+        "NFA": "nfa",
+        "FA": "fa",
+        "Live": "live",
+        "Custom": "custom",
+        "Użytkownik": "uzytkownik",
+        "Scam": "scam",
+        "Zgłoszenie": "zgloszenie",
+        "Pytanie": "pytanie",
+        "Błąd": "blad",
+        "Bot": "bot",
+        "Współpraca": "wspolpraca",
+        "Propozycja": "propozycja",
+        "Inne": "inne",
+    }
+    username = clean_username(member.name)
+    word = names.get(subcategory, "ticket")
+    return f"{word}-{username}"
+
+
+def can_manage_ticket(member):
     return (
-        f"{info['emoji']}・"
-        f"{info['prefix']}-"
-        f"{sub_slug}-"
-        f"{safe_name}"
+        has_role(member, STAFF_ROLE_ID)
+        or has_role(member, TT_MOD_ROLE_ID)
+        or has_role(member, TECHNIK_ROLE_ID)
     )
 
 
-# =========================================================
-# NORMAL TICKETS
-# =========================================================
+def should_ping_order_role(category_name, subcategory):
+    if category_name != "Zamówienia":
+        return True
 
-async def create_ticket(
-    interaction,
-    category_name,
-    subcategory=None
-):
+    return subcategory == "Zamówienie"
 
+
+async def create_ticket(interaction, category_name, subcategory):
     guild = interaction.guild
     member = interaction.user
 
     if guild is None:
         return
 
-    if count_open_tickets(member.id) >= 2:
-
+    if count_open_tickets(member.id) >= 1:
         await interaction.response.send_message(
-            "You already have 2 open tickets.",
-            ephemeral=True
+            "Masz już otwarty ticket.",
+            ephemeral=True,
         )
-
         return
 
-    category = get_ticket_category(
-        category_name
-    )
+    category = get_ticket_category(category_name)
 
     if category is None:
-
         await interaction.response.send_message(
-            "Ticket category not found.",
-            ephemeral=True
+            "Nie znaleziono kategorii ticketu.",
+            ephemeral=True,
         )
-
         return
 
-    ticket_name = build_ticket_name(
-        category_name,
-        member,
-        subcategory
-    )
+    ticket_name = build_ticket_name(subcategory, member)
 
-    owner_role = guild.get_role(
-        OWNER_ROLE_ID
-    )
-
-    tt_mod_role = guild.get_role(
-        TT_MOD_ROLE_ID
-    )
+    staff_role = guild.get_role(STAFF_ROLE_ID)
+    tt_mod_role = guild.get_role(TT_MOD_ROLE_ID)
+    technik_role = guild.get_role(TECHNIK_ROLE_ID)
 
     overwrites = {
-
         guild.default_role: discord.PermissionOverwrite(
-            view_channel=False
+            view_channel=False,
         ),
-
         member: discord.PermissionOverwrite(
             view_channel=True,
             send_messages=True,
             attach_files=True,
             embed_links=True,
-            read_message_history=True
-        )
+            read_message_history=True,
+        ),
     }
 
-    if owner_role is not None:
-
-        overwrites[owner_role] = discord.PermissionOverwrite(
-            view_channel=True,
-            send_messages=True,
-            attach_files=True,
-            embed_links=True,
-            read_message_history=True
-        )
-
-    if tt_mod_role is not None:
-
-        overwrites[tt_mod_role] = discord.PermissionOverwrite(
-            view_channel=True,
-            send_messages=True,
-            attach_files=True,
-            embed_links=True,
-            read_message_history=True
-        )
+    for role in (staff_role, tt_mod_role, technik_role):
+        if role is not None:
+            overwrites[role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                attach_files=True,
+                embed_links=True,
+                read_message_history=True,
+            )
 
     try:
-
         channel = await guild.create_text_channel(
             name=ticket_name,
             category=category,
             overwrites=overwrites,
-            reason="Ticket created"
+            reason="Ticket created",
         )
 
     except discord.Forbidden:
-
         await interaction.response.send_message(
-            "I do not have permission to create the ticket.",
-            ephemeral=True
+            "Bot nie ma uprawnień do utworzenia ticketu.",
+            ephemeral=True,
         )
-
         return
 
-    now = datetime.now(
-        timezone.utc
-    )
+    except discord.HTTPException as exc:
+        await interaction.response.send_message(
+            f"Nie udało się utworzyć ticketu: {exc}",
+            ephemeral=True,
+        )
+        return
+
+    now = datetime.now(timezone.utc)
 
     tickets_data[str(channel.id)] = {
         "author_id": member.id,
         "author_name": str(member),
         "category": category_name,
         "subcategory": subcategory,
-        "opened_at": now.isoformat()
+        "opened_at": now.isoformat(),
+        "open": True,
     }
 
-    save_json(
-        TICKETS_FILE,
-        tickets_data
-    )
+    save_json(TICKETS_FILE, tickets_data)
 
     await interaction.response.send_message(
-        f"Ticket created: {channel.mention}",
-        ephemeral=True
-    )
-
-    await channel.send(
-        "Ticket created successfully. Please reply to the message below."
+        f"Ticket utworzony: {channel.mention}",
+        ephemeral=True,
     )
 
     message_data = SUBCATEGORY_MESSAGES.get(
-        subcategory
+        subcategory,
+        "**Ticket**\nOpisz dokładnie, czego potrzebujesz.",
     )
-
-    if message_data is None:
-
-        if category_name == "Zamówienia":
-
-            description = (
-                "**Zamówienie**\n"
-                "Opisz dokładnie, czego potrzebujesz."
-            )
-
-        elif category_name == "Zgłoszenia":
-
-            description = (
-                "**Zgłoszenie**\n"
-                "Opisz dokładnie sytuację i dodaj dowody, jeśli je posiadasz."
-            )
-
-        elif category_name == "Pytanie / Błąd":
-
-            description = (
-                "**Pytanie / Problem**\n"
-                "Opisz dokładnie, w czym potrzebujesz pomocy."
-            )
-
-        else:
-
-            description = (
-                "**Inne**\n"
-                "Opisz dokładnie, w czym potrzebujesz pomocy."
-            )
-
-    else:
-
-        title, text = message_data
-
-        description = (
-            f"{title}\n"
-            f"{text}"
-        )
 
     embed = discord.Embed(
-        title="🎫 Ticket",
-        description=description,
-        color=EMBED_COLOR
+        title="Ticket",
+        description=message_data,
+        color=EMBED_COLOR,
     )
 
+    ping = member.mention
+
+    if should_ping_order_role(category_name, subcategory):
+        ping_role = guild.get_role(ORDER_PING_ROLE_ID)
+
+        if ping_role is not None:
+            ping = f"{ping} {ping_role.mention}"
+
     await channel.send(
+        content=ping,
         embed=embed,
-        view=TicketView()
-    )
-
-    await channel.send(
-        member.mention
+        view=TicketView(),
     )
 
 
@@ -1017,97 +785,72 @@ async def create_ticket(
 # =========================================================
 
 class TicketPanelView(discord.ui.View):
-
     def __init__(self):
-
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="Create Ticket",
-        emoji="🎟️",
+        label="Stwórz ticket",
         style=discord.ButtonStyle.success,
-        custom_id="ticket_create"
+        custom_id="ticket_create",
     )
     async def create_ticket_button(
         self,
         interaction: discord.Interaction,
-        button: discord.ui.Button
+        button: discord.ui.Button,
     ):
-
         await interaction.response.send_message(
+            "Wybierz kategorię:",
             view=MainCategoryView(),
-            ephemeral=True
+            ephemeral=True,
         )
 
 
 class MainCategoryView(discord.ui.View):
-
     def __init__(self):
-
-        super().__init__(
-            timeout=120
-        )
+        super().__init__(timeout=120)
 
         self.select = discord.ui.Select(
-            placeholder="Choose a ticket category",
+            placeholder="Wybierz kategorię ticketu",
             custom_id="ticket_main_category",
             options=[
                 discord.SelectOption(
                     label="Zamówienia",
                     emoji="🛒",
-                    value="Zamówienia"
+                    value="Zamówienia",
                 ),
                 discord.SelectOption(
                     label="Zgłoszenia",
                     emoji="🚨",
-                    value="Zgłoszenia"
+                    value="Zgłoszenia",
                 ),
                 discord.SelectOption(
                     label="Pytanie / Błąd",
                     emoji="❓",
-                    value="Pytanie / Błąd"
+                    value="Pytanie / Błąd",
                 ),
                 discord.SelectOption(
                     label="Inne",
                     emoji="📌",
-                    value="Inne"
-                )
-            ]
+                    value="Inne",
+                ),
+            ],
         )
 
         self.select.callback = self.category_selected
+        self.add_item(self.select)
 
-        self.add_item(
-            self.select
-        )
-
-    async def category_selected(
-        self,
-        interaction: discord.Interaction
-    ):
-
+    async def category_selected(self, interaction):
         category = self.select.values[0]
 
         await interaction.response.edit_message(
-            content=None,
-            view=SubcategoryView(
-                category
-            )
+            content="Wybierz podkategorię:",
+            view=SubcategoryView(category),
         )
 
 
 class SubcategoryView(discord.ui.View):
-
-    def __init__(
-        self,
-        category_name
-    ):
-
-        super().__init__(
-            timeout=120
-        )
+    def __init__(self, category_name):
+        super().__init__(timeout=120)
 
         self.category_name = category_name
 
@@ -1115,61 +858,44 @@ class SubcategoryView(discord.ui.View):
             category_name
         ]["subcategories"]
 
-        options = []
-
-        for name in subcategories:
-
-            options.append(
-                discord.SelectOption(
-                    label=name,
-                    value=name
-                )
+        options = [
+            discord.SelectOption(
+                label=name,
+                value=name,
             )
+            for name in subcategories
+        ]
 
         self.select = discord.ui.Select(
-            placeholder="Choose a subcategory",
-            options=options
+            placeholder="Wybierz podkategorię",
+            options=options,
         )
 
         self.select.callback = self.subcategory_selected
-
-        self.add_item(
-            self.select
-        )
+        self.add_item(self.select)
 
         back_button = discord.ui.Button(
-            label="Back",
+            label="Wróć",
             style=discord.ButtonStyle.secondary,
-            custom_id="ticket_back"
+            custom_id="ticket_back",
         )
 
         back_button.callback = self.back
+        self.add_item(back_button)
 
-        self.add_item(
-            back_button
-        )
-
-    async def subcategory_selected(
-        self,
-        interaction: discord.Interaction
-    ):
-
+    async def subcategory_selected(self, interaction):
         subcategory = self.select.values[0]
 
         await create_ticket(
             interaction,
             self.category_name,
-            subcategory
+            subcategory,
         )
 
-    async def back(
-        self,
-        interaction: discord.Interaction
-    ):
-
+    async def back(self, interaction):
         await interaction.response.edit_message(
-            content=None,
-            view=MainCategoryView()
+            content="Wybierz kategorię:",
+            view=MainCategoryView(),
         )
 
 
@@ -1178,44 +904,30 @@ class SubcategoryView(discord.ui.View):
 # =========================================================
 
 class TicketView(discord.ui.View):
-
     def __init__(self):
-
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="Close Ticket",
+        label="Zamknij ticket",
         emoji="🔒",
         style=discord.ButtonStyle.danger,
-        custom_id="ticket_close"
+        custom_id="ticket_close",
     )
     async def close_ticket(
         self,
         interaction: discord.Interaction,
-        button: discord.ui.Button
+        button: discord.ui.Button,
     ):
-
         guild = interaction.guild
 
         if guild is None:
             return
 
-        owner_role = guild.get_role(
-            OWNER_ROLE_ID
-        )
-
-        if (
-            owner_role is None
-            or owner_role not in interaction.user.roles
-        ):
-
+        if not can_manage_ticket(interaction.user):
             await interaction.response.send_message(
-                "Only the Owner can close this ticket.",
-                ephemeral=True
+                "Nie masz uprawnień do zamknięcia tego ticketu.",
+                ephemeral=True,
             )
-
             return
 
         channel = interaction.channel
@@ -1223,196 +935,153 @@ class TicketView(discord.ui.View):
         if channel is None:
             return
 
-        ticket_info = tickets_data.get(
-            str(channel.id)
-        )
+        ticket_info = tickets_data.get(str(channel.id))
 
         if ticket_info is None:
-
             await interaction.response.send_message(
-                "Ticket data could not be found.",
-                ephemeral=True
+                "Nie znaleziono danych tego ticketu.",
+                ephemeral=True,
             )
+            return
 
+        if not ticket_info.get("open", True):
+            await interaction.response.send_message(
+                "Ten ticket jest już zamykany.",
+                ephemeral=True,
+            )
             return
 
         opened_at = datetime.fromisoformat(
             ticket_info["opened_at"]
         )
 
-        closed_at = datetime.now(
-            timezone.utc
-        )
-
-        transcript_lines = []
-
-        transcript_lines.append(
-            "Uzi Shop Ticket Transcript"
-        )
-
-        transcript_lines.append(
-            "========================================"
-        )
-
-        transcript_lines.append(
-            f"Channel: {channel.name}"
-        )
-
-        transcript_lines.append(
-            f"Opened by: {ticket_info['author_name']}"
-        )
-
-        transcript_lines.append(
-            f"Opened at: {opened_at.strftime('%d.%m.%Y %H:%M:%S UTC')}"
-        )
-
-        transcript_lines.append(
-            f"Closed by: {interaction.user}"
-        )
-
-        transcript_lines.append(
-            f"Closed at: {closed_at.strftime('%d.%m.%Y %H:%M:%S UTC')}"
-        )
-
-        transcript_lines.append(
-            f"Category: {ticket_info['category']}"
-        )
-
-        if ticket_info.get("subcategory"):
-
-            transcript_lines.append(
-                f"Subcategory: {ticket_info['subcategory']}"
-            )
-
-        transcript_lines.append(
-            "========================================"
-        )
-
-        transcript_lines.append("")
-
-        async for message in channel.history(
-            limit=None,
-            oldest_first=True
-        ):
-
-            timestamp = message.created_at.strftime(
-                "%d.%m.%Y %H:%M:%S UTC"
-            )
-
-            transcript_lines.append(
-                f"[{timestamp}] {message.author} ({message.author.id}):"
-            )
-
-            if message.content:
-
-                transcript_lines.append(
-                    message.content
-                )
-
-            if message.attachments:
-
-                for attachment in message.attachments:
-
-                    transcript_lines.append(
-                        f"Attachment: {attachment.url}"
-                    )
-
-            transcript_lines.append("")
-
-        transcript_text = "\n".join(
-            transcript_lines
-        )
-
-        transcript_file = discord.File(
-            io.BytesIO(
-                transcript_text.encode("utf-8")
-            ),
-            filename=(
-                f"ticket-"
-                f"{closed_at.strftime('%d%m%y')}-"
-                f"{channel.id}.txt"
-            )
-        )
-
-        logs_channel = guild.get_channel(
-            TICKET_LOGS_CHANNEL_ID
-        )
-
-        if logs_channel is not None:
-
-            await logs_channel.send(
-                content=(
-                    f"Ticket transcript: **{channel.name}**\n"
-                    f"Opened by: {ticket_info['author_name']}\n"
-                    f"Closed by: {interaction.user}"
-                ),
-                file=transcript_file
-            )
+        closed_at = datetime.now(timezone.utc)
 
         await interaction.response.send_message(
-            "Ticket closed. This channel will be deleted in 15 seconds."
+            "Ticket zamknięty. Kanał zostanie usunięty za 15 sekund."
         )
 
         button.disabled = True
 
         try:
-
-            await interaction.message.edit(
-                view=self
-            )
-
+            await interaction.message.edit(view=self)
         except (
             discord.NotFound,
             discord.Forbidden,
-            discord.HTTPException
+            discord.HTTPException,
         ):
             pass
 
-        await asyncio.sleep(
-            15
-        )
+        transcript_lines = [
+            "Uzi Shop Ticket Transcript",
+            "========================================",
+            f"Channel: {channel.name}",
+            f"Opened by: {ticket_info.get('author_name', 'Unknown')}",
+            f"Opened at: {opened_at.strftime('%d.%m.%Y %H:%M:%S UTC')}",
+            f"Closed by: {interaction.user}",
+            f"Closed at: {closed_at.strftime('%d.%m.%Y %H:%M:%S UTC')}",
+            f"Category: {ticket_info.get('category', 'Unknown')}",
+        ]
 
-        tickets_data.pop(
-            str(channel.id),
-            None
-        )
+        if ticket_info.get("subcategory"):
+            transcript_lines.append(
+                f"Subcategory: {ticket_info['subcategory']}"
+            )
 
-        save_json(
-            TICKETS_FILE,
-            tickets_data
-        )
+        transcript_lines.extend([
+            "========================================",
+            "",
+        ])
 
         try:
+            async for message in channel.history(
+                limit=None,
+                oldest_first=True,
+            ):
+                timestamp = message.created_at.strftime(
+                    "%d.%m.%Y %H:%M:%S UTC"
+                )
 
+                transcript_lines.append(
+                    f"[{timestamp}] {message.author} ({message.author.id}):"
+                )
+
+                if message.content:
+                    transcript_lines.append(message.content)
+
+                for attachment in message.attachments:
+                    transcript_lines.append(
+                        f"Attachment: {attachment.url}"
+                    )
+
+                transcript_lines.append("")
+
+        except discord.HTTPException:
+            transcript_lines.append(
+                "[Nie udało się pobrać pełnej historii kanału]"
+            )
+
+        transcript_text = "\n".join(transcript_lines)
+
+        transcript_file = discord.File(
+            io.BytesIO(transcript_text.encode("utf-8")),
+            filename=(
+                f"ticket-"
+                f"{closed_at.strftime('%d%m%y')}-"
+                f"{channel.id}.txt"
+            ),
+        )
+
+        logs_channel = guild.get_channel(TICKET_LOGS_CHANNEL_ID)
+
+        if logs_channel is not None:
+            try:
+                await logs_channel.send(
+                    content=(
+                        f"Ticket transcript: **{channel.name}**\n"
+                        f"Opened by: {ticket_info.get('author_name', 'Unknown')}\n"
+                        f"Closed by: {interaction.user}"
+                    ),
+                    file=transcript_file,
+                )
+            except discord.HTTPException:
+                pass
+
+        ticket_info["open"] = False
+        ticket_info["closed_by"] = interaction.user.id
+        ticket_info["closed_by_name"] = str(interaction.user)
+        ticket_info["closed_at"] = closed_at.isoformat()
+
+        save_json(TICKETS_FILE, tickets_data)
+
+        await asyncio.sleep(15)
+
+        tickets_data.pop(str(channel.id), None)
+        save_json(TICKETS_FILE, tickets_data)
+
+        try:
             await channel.delete(
                 reason=f"Ticket closed by {interaction.user}"
             )
-
         except (
             discord.Forbidden,
-            discord.NotFound
+            discord.NotFound,
+            discord.HTTPException,
         ):
             pass
 
 
 # =========================================================
-# TICKET COMMAND
+# TICKET PANEL COMMAND
 # =========================================================
 
-@bot.command()
-@is_owner()
+@bot.command(name="ticket")
+@staff_only
 async def ticket(ctx):
-
-    channel = bot.get_channel(
-        TICKET_PANEL_CHANNEL_ID
-    )
+    channel = bot.get_channel(TICKET_PANEL_CHANNEL_ID)
 
     if channel is None:
-
-        await ctx.send(
-            "Ticket panel channel not found."
-        )
-
+        await ctx.send("Nie znaleziono kanału panelu ticketów.")
         return
 
     embed = discord.Embed(
@@ -1420,12 +1089,12 @@ async def ticket(ctx):
         description=(
             "Wybierz kategorię poniżej, aby utworzyć ticket"
         ),
-        color=EMBED_COLOR
+        color=EMBED_COLOR,
     )
 
     await channel.send(
         embed=embed,
-        view=TicketPanelView()
+        view=TicketPanelView(),
     )
 
     try:
@@ -1438,19 +1107,13 @@ async def ticket(ctx):
 # TICKET RULES
 # =========================================================
 
-@bot.command()
+@bot.command(name="zasadyticket")
+@staff_only
 async def zasadyticket(ctx):
-
-    channel = bot.get_channel(
-        TICKET_RULES_CHANNEL_ID
-    )
+    channel = bot.get_channel(TICKET_RULES_CHANNEL_ID)
 
     if channel is None:
-
-        await ctx.send(
-            "Ticket rules channel not found."
-        )
-
+        await ctx.send("Nie znaleziono kanału regulaminu ticketów.")
         return
 
     embed = discord.Embed(
@@ -1473,8 +1136,6 @@ async def zasadyticket(ctx):
             "• otworzysz ticket i nie opiszesz sprawy przez **1 godzinę**\n"
             "• otworzysz ticket w **nieodpowiedniej kategorii**\n\n"
 
-            "_(Przykład: chcesz współpracę, ale wybierasz ticket dotyczący zamówienia. Czytanie nie jest trudne)_\n\n"
-
             "**05 ・ KARY**\n"
             "Za niestosowanie się do regulaminu mogą zostać nałożone **kary według naszego uznania**\n\n"
 
@@ -1484,12 +1145,10 @@ async def zasadyticket(ctx):
 
             "**Uzi Stock**"
         ),
-        color=EMBED_COLOR
+        color=EMBED_COLOR,
     )
 
-    await channel.send(
-        embed=embed
-    )
+    await channel.send(embed=embed)
 
     try:
         await ctx.message.delete()
@@ -1498,23 +1157,16 @@ async def zasadyticket(ctx):
 
 
 # =========================================================
-# REGULAMIN
+# SERVER RULES
 # =========================================================
 
-@bot.command()
-@is_owner()
+@bot.command(name="regulamin")
+@staff_only
 async def regulamin(ctx):
-
-    channel = bot.get_channel(
-        REGULAMIN_CHANNEL_ID
-    )
+    channel = bot.get_channel(REGULAMIN_CHANNEL_ID)
 
     if channel is None:
-
-        await ctx.send(
-            "Regulamin channel not found."
-        )
-
+        await ctx.send("Nie znaleziono kanału regulaminu.")
         return
 
     embed = discord.Embed(
@@ -1542,12 +1194,10 @@ async def regulamin(ctx):
             "**07 ・ BŁĘDY**\n"
             "Wykorzystywanie błędów serwera lub bota w celu uzyskania korzyści jest zabronione"
         ),
-        color=EMBED_COLOR
+        color=EMBED_COLOR,
     )
 
-    await channel.send(
-        embed=embed
-    )
+    await channel.send(embed=embed)
 
     try:
         await ctx.message.delete()
@@ -1559,53 +1209,44 @@ async def regulamin(ctx):
 # FAQ
 # =========================================================
 
-@bot.command()
-@is_owner()
+@bot.command(name="faq")
+@staff_only
 async def faq(ctx):
-
-    channel = bot.get_channel(
-        FAQ_CHANNEL_ID
-    )
+    channel = bot.get_channel(FAQ_CHANNEL_ID)
 
     if channel is None:
-
-        await ctx.send(
-            "FAQ channel not found."
-        )
-
+        await ctx.send("Nie znaleziono kanału FAQ.")
         return
 
     embed = discord.Embed(
         description=(
-            "## **01 ・INFORMACJE**\n"
-            f"• <#{REGULAMIN_CHANNEL_ID}>  → zasady serwera\n"
-            f"• <#{TICKET_RULES_CHANNEL_ID}>  → zasady dotyczące ticketów\n"
-            f"• <#{FAQ_CHANNEL_ID}>  → tutaj jesteś\n"
-            f"• <#{PAYMENT_CHANNEL_ID}>  → dostępne metody płatności\n"
-            f"• <#{SOCIALS_CHANNEL_ID}>  → nasze social media\n"
-            f"• <#{1546579824401977364}>  → lista zaufanych klientów i osób\n\n"
+            "## **01 ・ INFORMACJE**\n"
+            f"• <#{REGULAMIN_CHANNEL_ID}> → zasady serwera\n"
+            f"• <#{TICKET_RULES_CHANNEL_ID}> → zasady dotyczące ticketów\n"
+            f"• <#{FAQ_CHANNEL_ID}> → tutaj jesteś\n"
+            f"• <#{PAYMENT_CHANNEL_ID}> → dostępne metody płatności\n"
+            f"• <#{SOCIALS_CHANNEL_ID}> → nasze social media\n"
+            f"• <#1546579824401977364> → lista zaufanych klientów i osób\n\n"
 
-            "## **02 ・OGŁOSZENIA**\n"
-            "• <#1546579637709312121>  → ważne informacje i aktualizacje\n"
-            f"• <#{LIVE_CHANNEL_ID}>  → informacje o live i powiadomienia\n"
-            f"• <#{GIVEAWAY_CHANNEL_ID}>  → informacje o giveawayach\n\n"
+            "## **02 ・ OGŁOSZENIA**\n"
+            "• <#1546579637709312121> → ważne informacje i aktualizacje\n"
+            f"• <#{LIVE_CHANNEL_ID}> → informacje o live i powiadomienia\n"
+            f"• <#{GIVEAWAY_CHANNEL_ID}> → informacje o giveawayach\n\n"
 
-            "## **03 ・COMMUNITY**\n"
-            f"• <#{COMMUNITY_CHAT_CHANNEL_ID}>  → rozmowy użytkowników\n"
-            f"• <#{LEVELS_CHANNEL_ID}>  → informacje o levelach i expie\n"
-            f"• <#{INVITES_CHANNEL_ID}>  → informacje o zaproszeniach\n\n"
+            "## **03 ・ COMMUNITY**\n"
+            f"• <#{COMMUNITY_CHAT_CHANNEL_ID}> → rozmowy użytkowników\n"
+            f"• <#{LEVELS_CHANNEL_ID}> → informacje o levelach i expie\n"
+            f"• <#{INVITES_CHANNEL_ID}> → informacje o zaproszeniach\n\n"
 
-            "## **04 ・SKLEP**\n"
-            f"• <#{STOCK_CHANNEL_ID}>  → dostępne konta nfa\n"
-            f"• <#{TICKET_PANEL_CHANNEL_ID}>  → zakup lub pomoc\n"
-            f"• <#{LEGITCHECK_CHANNEL_ID}>  → legitchecki"
+            "## **04 ・ SKLEP**\n"
+            f"• <#{STOCK_CHANNEL_ID}> → dostępne konta nfa\n"
+            f"• <#{TICKET_PANEL_CHANNEL_ID}> → zakup lub pomoc\n"
+            f"• <#{LEGITCHECK_CHANNEL_ID}> → legitchecki"
         ),
-        color=EMBED_COLOR
+        color=EMBED_COLOR,
     )
 
-    await channel.send(
-        embed=embed
-    )
+    await channel.send(embed=embed)
 
     try:
         await ctx.message.delete()
@@ -1618,518 +1259,414 @@ async def faq(ctx):
 # =========================================================
 
 async def set_everyone_hidden(channel):
-
     everyone = channel.guild.default_role
 
     try:
-
         await channel.set_permissions(
             everyone,
             view_channel=False,
             send_messages=False,
             connect=False,
-            speak=False
+            speak=False,
         )
-
     except discord.Forbidden:
         pass
 
 
-async def set_verified_view(
-    channel,
-    verified_role
-):
+async def set_role_access(channel, role, *, send_messages=True):
+    if role is None:
+        return
 
     try:
-
         await channel.set_permissions(
-            verified_role,
-            view_channel=True
-        )
-
-    except discord.Forbidden:
-        pass
-
-
-async def set_owner_access(
-    channel,
-    owner_role
-):
-
-    try:
-
-        await channel.set_permissions(
-            owner_role,
+            role,
             view_channel=True,
-            send_messages=True,
-            attach_files=True,
-            embed_links=True,
+            send_messages=send_messages,
+            attach_files=send_messages,
+            embed_links=send_messages,
             read_message_history=True,
             connect=True,
-            speak=True
+            speak=send_messages,
         )
+    except discord.Forbidden:
+        pass
 
+
+async def set_verified_view(channel, verified_role):
+    if verified_role is None:
+        return
+
+    try:
+        await channel.set_permissions(
+            verified_role,
+            view_channel=True,
+        )
     except discord.Forbidden:
         pass
 
 
 async def hide_category_completely(category):
-
-    await set_everyone_hidden(
-        category
-    )
+    await set_everyone_hidden(category)
 
     for channel in category.channels:
-
-        await set_everyone_hidden(
-            channel
-        )
+        await set_everyone_hidden(channel)
 
 
 async def apply_server_permissions(guild):
-
     everyone = guild.default_role
 
-    verified_role = guild.get_role(
-        VERIFIED_ROLE_ID
-    )
-
-    owner_role = guild.get_role(
-        OWNER_ROLE_ID
-    )
-
-    tt_mod_role = guild.get_role(
-        TT_MOD_ROLE_ID
-    )
+    verified_role = guild.get_role(VERIFIED_ROLE_ID)
+    staff_role = guild.get_role(STAFF_ROLE_ID)
+    tt_mod_role = guild.get_role(TT_MOD_ROLE_ID)
+    technik_role = guild.get_role(TECHNIK_ROLE_ID)
 
     if verified_role is None:
         return
 
+    staff_roles = [
+        role
+        for role in (
+            staff_role,
+            tt_mod_role,
+            technik_role,
+        )
+        if role is not None
+    ]
+
     # General categories
     for category in guild.categories:
-
         if category.id in TICKET_CATEGORY_IDS:
             continue
 
         if category.id == BLACKLIST_CATEGORY_ID:
             continue
 
-        await hide_category_completely(
-            category
-        )
+        await hide_category_completely(category)
 
         try:
-
             await category.set_permissions(
                 verified_role,
-                view_channel=True
+                view_channel=True,
             )
-
         except discord.Forbidden:
             pass
 
-        if owner_role is not None:
-
-            await set_owner_access(
-                category,
-                owner_role
-            )
+        for role in staff_roles:
+            await set_role_access(category, role)
 
         for channel in category.channels:
-
             if channel.id == VERIFICATION_CHANNEL_ID:
                 continue
 
             await set_verified_view(
                 channel,
-                verified_role
+                verified_role,
             )
 
-            if owner_role is not None:
+            for role in staff_roles:
+                await set_role_access(channel, role)
 
-                await set_owner_access(
-                    channel,
-                    owner_role
-                )
+    # Ticket categories are not globally hidden here.
+    # Ticket channels get their own permission overwrites.
 
-    # Community
-    community_category = guild.get_channel(
-        COMMUNITY_CATEGORY_ID
-    )
-
-    if community_category is not None:
-
-        await hide_category_completely(
-            community_category
-        )
-
-        await set_verified_view(
-            community_category,
-            verified_role
-        )
-
-        if owner_role is not None:
-
-            await set_owner_access(
-                community_category,
-                owner_role
-            )
-
-        for channel in community_category.channels:
-
-            await set_everyone_hidden(
-                channel
-            )
-
-            await set_verified_view(
-                channel,
-                verified_role
-            )
-
-            if owner_role is not None:
-
-                await set_owner_access(
-                    channel,
-                    owner_role
-                )
-
-    # Voice
-    voice_category = guild.get_channel(
-        VOICE_CATEGORY_ID
-    )
-
-    if voice_category is not None:
-
-        await hide_category_completely(
-            voice_category
-        )
-
-        await set_verified_view(
-            voice_category,
-            verified_role
-        )
-
-        if owner_role is not None:
-
-            await set_owner_access(
-                voice_category,
-                owner_role
-            )
-
-        for channel in voice_category.channels:
-
-            await set_everyone_hidden(
-                channel
-            )
-
-            await set_verified_view(
-                channel,
-                verified_role
-            )
-
-            if owner_role is not None:
-
-                await set_owner_access(
-                    channel,
-                    owner_role
-                )
-
-    # Information
+    # Information category
     information_category = guild.get_channel(
         INFORMATION_CATEGORY_ID
     )
 
     if information_category is not None:
-
         try:
-
             await information_category.set_permissions(
                 everyone,
                 view_channel=False,
-                send_messages=False
+                send_messages=False,
             )
 
             await information_category.set_permissions(
                 verified_role,
                 view_channel=True,
-                send_messages=False
+                send_messages=False,
             )
 
-            if owner_role is not None:
-
+            for role in staff_roles:
                 await information_category.set_permissions(
-                    owner_role,
+                    role,
                     view_channel=True,
                     send_messages=True,
                     attach_files=True,
                     embed_links=True,
-                    read_message_history=True
+                    read_message_history=True,
                 )
 
         except discord.Forbidden:
             pass
 
         for channel in information_category.channels:
-
             try:
-
                 await channel.set_permissions(
                     everyone,
                     view_channel=False,
-                    send_messages=False
+                    send_messages=False,
                 )
 
                 await channel.set_permissions(
                     verified_role,
                     view_channel=True,
-                    send_messages=False
+                    send_messages=False,
                 )
 
-                if owner_role is not None:
-
+                for role in staff_roles:
                     await channel.set_permissions(
-                        owner_role,
+                        role,
                         view_channel=True,
                         send_messages=True,
                         attach_files=True,
                         embed_links=True,
-                        read_message_history=True
+                        read_message_history=True,
                     )
 
             except discord.Forbidden:
                 pass
 
-    # Live
-    live_channel = guild.get_channel(
-        LIVE_CHANNEL_ID
-    )
+    # Live channel
+    live_channel = guild.get_channel(LIVE_CHANNEL_ID)
 
     if live_channel is not None:
-
         try:
-
             await live_channel.set_permissions(
                 everyone,
                 view_channel=False,
-                send_messages=False
+                send_messages=False,
             )
 
             await live_channel.set_permissions(
                 verified_role,
                 view_channel=True,
-                send_messages=False
+                send_messages=False,
             )
 
-            if tt_mod_role is not None:
-
+            for role in staff_roles:
                 await live_channel.set_permissions(
-                    tt_mod_role,
+                    role,
                     view_channel=True,
                     send_messages=True,
                     attach_files=True,
                     embed_links=True,
-                    read_message_history=True
-                )
-
-            if owner_role is not None:
-
-                await live_channel.set_permissions(
-                    owner_role,
-                    view_channel=True,
-                    send_messages=True,
-                    attach_files=True,
-                    embed_links=True,
-                    read_message_history=True
+                    read_message_history=True,
                 )
 
         except discord.Forbidden:
             pass
 
-    # Shop
-    shop_category = guild.get_channel(
-        SHOP_CATEGORY_ID
-    )
+    # Shop category
+    shop_category = guild.get_channel(SHOP_CATEGORY_ID)
 
     if shop_category is not None:
-
         try:
-
             await shop_category.set_permissions(
                 everyone,
                 view_channel=False,
-                send_messages=False
+                send_messages=False,
             )
 
             await shop_category.set_permissions(
                 verified_role,
                 view_channel=True,
-                send_messages=False
+                send_messages=False,
             )
 
-            if owner_role is not None:
-
+            for role in staff_roles:
                 await shop_category.set_permissions(
-                    owner_role,
+                    role,
                     view_channel=True,
                     send_messages=True,
                     attach_files=True,
                     embed_links=True,
-                    read_message_history=True
+                    read_message_history=True,
                 )
 
         except discord.Forbidden:
             pass
 
         for channel in shop_category.channels:
-
             try:
-
                 await channel.set_permissions(
                     everyone,
                     view_channel=False,
-                    send_messages=False
+                    send_messages=False,
                 )
 
                 await channel.set_permissions(
                     verified_role,
                     view_channel=True,
-                    send_messages=False
+                    send_messages=False,
                 )
 
-                if owner_role is not None:
-
-                    await set_owner_access(
-                        channel,
-                        owner_role
+                for role in staff_roles:
+                    await channel.set_permissions(
+                        role,
+                        view_channel=True,
+                        send_messages=True,
+                        attach_files=True,
+                        embed_links=True,
+                        read_message_history=True,
                     )
 
             except discord.Forbidden:
                 pass
 
-    # Levels info channel
-    levels_channel = guild.get_channel(
-        LEVELS_CHANNEL_ID
-    )
+    # Levels information channel
+    levels_channel = guild.get_channel(LEVELS_CHANNEL_ID)
 
     if levels_channel is not None:
-
         try:
-
             await levels_channel.set_permissions(
                 everyone,
                 view_channel=False,
-                send_messages=False
+                send_messages=False,
             )
 
             await levels_channel.set_permissions(
                 verified_role,
                 view_channel=True,
-                send_messages=False
+                send_messages=False,
             )
 
-            if owner_role is not None:
-
+            for role in staff_roles:
                 await levels_channel.set_permissions(
-                    owner_role,
+                    role,
                     view_channel=True,
                     send_messages=True,
                     attach_files=True,
                     embed_links=True,
-                    read_message_history=True
+                    read_message_history=True,
                 )
 
         except discord.Forbidden:
             pass
 
-    # Invites info channel
-    invites_channel = guild.get_channel(
-        INVITES_CHANNEL_ID
-    )
+    # Invites information channel
+    invites_channel = guild.get_channel(INVITES_CHANNEL_ID)
 
     if invites_channel is not None:
-
         try:
-
             await invites_channel.set_permissions(
                 everyone,
                 view_channel=False,
-                send_messages=False
+                send_messages=False,
             )
 
             await invites_channel.set_permissions(
                 verified_role,
                 view_channel=True,
-                send_messages=False
+                send_messages=False,
             )
 
-            if owner_role is not None:
-
+            for role in staff_roles:
                 await invites_channel.set_permissions(
-                    owner_role,
+                    role,
                     view_channel=True,
                     send_messages=True,
                     attach_files=True,
                     embed_links=True,
-                    read_message_history=True
+                    read_message_history=True,
                 )
 
         except discord.Forbidden:
             pass
 
-    # Verification
+    # Verification channel
     verification_channel = guild.get_channel(
         VERIFICATION_CHANNEL_ID
     )
 
     if verification_channel is not None:
-
         try:
-
             await verification_channel.set_permissions(
                 everyone,
                 view_channel=True,
                 send_messages=False,
-                read_message_history=True
+                read_message_history=True,
             )
 
             await verification_channel.set_permissions(
                 verified_role,
                 view_channel=True,
-                send_messages=False
+                send_messages=False,
             )
 
-            if owner_role is not None:
-
+            for role in staff_roles:
                 await verification_channel.set_permissions(
-                    owner_role,
+                    role,
                     view_channel=True,
                     send_messages=True,
                     attach_files=True,
                     embed_links=True,
-                    read_message_history=True
+                    read_message_history=True,
                 )
 
         except discord.Forbidden:
             pass
 
 
-@bot.command()
-@is_owner()
+@bot.command(name="setpermissions")
+@staff_only
 async def setpermissions(ctx):
+    if ctx.guild is None:
+        return
 
-    await apply_server_permissions(
-        ctx.guild
-    )
+    await apply_server_permissions(ctx.guild)
 
     await ctx.send(
-        "Server permissions have been configured successfully.",
-        delete_after=5
+        "Uprawnienia serwera zostały skonfigurowane.",
+        delete_after=5,
     )
 
     try:
         await ctx.message.delete()
     except discord.Forbidden:
         pass
+
+
+# =========================================================
+# ERRORS
+# =========================================================
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return
+
+    if isinstance(
+        error,
+        (
+            commands.CheckFailure,
+            commands.MissingPermissions,
+        ),
+    ):
+        await ctx.send(
+            "Nie masz uprawnień do tej komendy.",
+            delete_after=4,
+        )
+        return
+
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(
+            "Brakuje wymaganych argumentów.",
+            delete_after=4,
+        )
+        return
+
+    if isinstance(error, commands.BadArgument):
+        await ctx.send(
+            "Nieprawidłowy argument.",
+            delete_after=4,
+        )
+        return
+
+    print(
+        f"[COMMAND ERROR] {type(error).__name__}: {error}"
+    )
 
 
 # =========================================================
@@ -2141,42 +1678,25 @@ views_added = False
 
 @bot.event
 async def on_ready():
-
     global views_added
 
     if not views_added:
-
-        bot.add_view(
-            VerifyView()
-        )
-
-        bot.add_view(
-            TicketPanelView()
-        )
-
-        bot.add_view(
-            TicketView()
-        )
-
+        bot.add_view(VerifyView())
+        bot.add_view(TicketPanelView())
+        bot.add_view(TicketView())
         views_added = True
 
-    print(
-        f"Logged in as {bot.user}"
-    )
-
-    print(
-        f"Connected to {len(bot.guilds)} server(s)"
-    )
+    print(f"Logged in as {bot.user}")
+    print(f"Connected to {len(bot.guilds)} server(s)")
 
 
 # =========================================================
-# TOKEN CHECK
+# TOKEN
 # =========================================================
 
 if not TOKEN:
-
     raise RuntimeError(
-        "Bot token is not set."
+        "DISCORD_TOKEN nie jest ustawiony w zmiennych środowiskowych."
     )
 
 
@@ -2184,6 +1704,4 @@ if not TOKEN:
 # RUN
 # =========================================================
 
-bot.run(
-    TOKEN
-)
+bot.run(TOKEN)
