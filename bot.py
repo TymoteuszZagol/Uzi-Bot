@@ -1,3 +1,4 @@
+```python
 import asyncio
 import io
 import json
@@ -10,14 +11,13 @@ from discord.ext import commands
 
 
 # =========================================================
-# CONFIG
+# KONFIGURACJA
 # =========================================================
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = "!"
 EMBED_COLOR = discord.Color(0x279A08)
 
-# Staff role. This is the role that was previously named OWNER_ROLE_ID.
 STAFF_ROLE_ID = 1546584318615355403
 VERIFIED_ROLE_ID = 1546585369036718180
 TT_MOD_ROLE_ID = 1546584450765299864
@@ -51,7 +51,7 @@ VOICE_CATEGORY_ID = 1546580607142727741
 
 BLACKLIST_CATEGORY_ID = 1547264870733316167
 
-# Ticket categories
+# Kategorie ticketów
 PURCHASES_CATEGORY_ID = 1546963814854041601
 REPORTS_CATEGORY_ID = 1546963924572971009
 QUESTIONS_ERRORS_CATEGORY_ID = 1551661373040365679
@@ -66,6 +66,7 @@ TICKET_CATEGORY_IDS = {
 
 DATA_DIR = "/app/data"
 os.makedirs(DATA_DIR, exist_ok=True)
+
 TICKETS_FILE = os.path.join(DATA_DIR, "tickets.json")
 
 
@@ -86,7 +87,7 @@ bot = commands.Bot(
 
 
 # =========================================================
-# JSON
+# PLIKI JSON
 # =========================================================
 
 def initialize_data_file(filename, default):
@@ -102,7 +103,7 @@ def initialize_data_file(filename, default):
                 ensure_ascii=False,
             )
     except OSError as exc:
-        print(f"Nie udało się utworzyć {filename}: {exc}")
+        print(f"Nie udało się utworzyć pliku {filename}: {exc}")
 
 
 def load_json(filename, default):
@@ -112,8 +113,7 @@ def load_json(filename, default):
 
     try:
         with open(filename, "r", encoding="utf-8") as file:
-            data = json.load(file)
-            return data
+            return json.load(file)
     except (json.JSONDecodeError, OSError):
         return default
 
@@ -128,14 +128,14 @@ def save_json(filename, data):
                 ensure_ascii=False,
             )
     except OSError as exc:
-        print(f"Nie udało się zapisać {filename}: {exc}")
+        print(f"Nie udało się zapisać pliku {filename}: {exc}")
 
 
 tickets_data = load_json(TICKETS_FILE, {})
 
 
 # =========================================================
-# PERMISSIONS
+# UPRAWNIENIA
 # =========================================================
 
 def has_role(member, role_id):
@@ -143,14 +143,6 @@ def has_role(member, role_id):
 
 
 def is_staff_member(member):
-    return (
-        has_role(member, STAFF_ROLE_ID)
-        or has_role(member, TT_MOD_ROLE_ID)
-        or has_role(member, TECHNIK_ROLE_ID)
-    )
-
-
-def is_staff_or_mod(member):
     return (
         has_role(member, STAFF_ROLE_ID)
         or has_role(member, TT_MOD_ROLE_ID)
@@ -171,17 +163,20 @@ def command_check(role_ids):
     return commands.check(predicate)
 
 
-staff_only = command_check(
-    {STAFF_ROLE_ID, TECHNIK_ROLE_ID}
-)
+staff_only = command_check({
+    STAFF_ROLE_ID,
+    TECHNIK_ROLE_ID,
+})
 
-staff_mod_only = command_check(
-    {STAFF_ROLE_ID, TT_MOD_ROLE_ID, TECHNIK_ROLE_ID}
-)
+staff_mod_only = command_check({
+    STAFF_ROLE_ID,
+    TT_MOD_ROLE_ID,
+    TECHNIK_ROLE_ID,
+})
 
 
 # =========================================================
-# VERIFICATION
+# WERYFIKACJA
 # =========================================================
 
 class VerifyView(discord.ui.View):
@@ -207,7 +202,7 @@ class VerifyView(discord.ui.View):
 
         if role is None:
             await interaction.response.send_message(
-                "Nie znaleziono roli uzytkownik.",
+                "Nie znaleziono roli użytkownika.",
                 ephemeral=True,
             )
             return
@@ -222,15 +217,17 @@ class VerifyView(discord.ui.View):
         try:
             await interaction.user.add_roles(
                 role,
-                reason="User verification",
+                reason="Weryfikacja użytkownika",
             )
+
             await interaction.response.send_message(
                 "Pomyślnie się zweryfikowałeś.",
                 ephemeral=True,
             )
+
         except discord.Forbidden:
             await interaction.response.send_message(
-                "Bot nie ma uprawnień do nadania roli uzytkownik.",
+                "Bot nie ma uprawnień do nadania roli użytkownika.",
                 ephemeral=True,
             )
 
@@ -262,7 +259,7 @@ async def weryfikacja(ctx):
 
 
 # =========================================================
-# PAYMENTS
+# PŁATNOŚCI
 # =========================================================
 
 @bot.command(name="payments")
@@ -471,7 +468,7 @@ async def mute(ctx, member: discord.Member, duration: str):
     try:
         await member.timeout(
             timedelta(seconds=seconds),
-            reason=f"Muted by {ctx.author}",
+            reason=f"Wyciszenie przez {ctx.author}",
         )
 
         await ctx.send(
@@ -492,7 +489,7 @@ async def mute(ctx, member: discord.Member, duration: str):
 
 
 # =========================================================
-# INVITE REWARDS
+# NAGRODY ZA ZAPROSZENIA
 # =========================================================
 
 @bot.command(name="invites")
@@ -515,71 +512,156 @@ async def invites(ctx):
 
 
 # =========================================================
-# TICKETS
+# TICKETY
 # =========================================================
 
 CATEGORY_INFO = {
     "Zamówienia": {
-        "emoji": "🛒",
-        "word": "zamowienie",
         "category_id": PURCHASES_CATEGORY_ID,
         "subcategories": {
-            "Pytanie dotyczące zamówienia": "pytanie",
-            "Kupno konta NFA ze stock": "nfa",
-            "Kupno konta FA ze stock": "fa",
-            "Kupno konta z live": "live",
-            "Konto na zamówienie": "custom",
+            "Pytanie dotyczące zamówienia": {
+                "name": "pytanie",
+                "message": (
+                    "**Pytanie dotyczące zamówienia**\n"
+                    "Opisz dokładnie, czego potrzebujesz."
+                ),
+                "ping_role": True,
+            },
+            "Kupno konta NFA ze stock": {
+                "name": "nfa",
+                "message": (
+                    "**Kupno konta NFA ze stock**\n"
+                    "Napisz, jakie konto NFA chcesz kupić."
+                ),
+                "ping_role": False,
+            },
+            "Kupno konta FA ze stock": {
+                "name": "fa",
+                "message": (
+                    "**Kupno konta FA ze stock**\n"
+                    "Napisz, jakie konto FA chcesz kupić."
+                ),
+                "ping_role": False,
+            },
+            "Kupno konta z live": {
+                "name": "live",
+                "message": (
+                    "**Kupno konta z live**\n"
+                    "Napisz, jakie konto chcesz kupić z live."
+                ),
+                "ping_role": False,
+            },
+            "Konto na zamówienie": {
+                "name": "custom",
+                "message": (
+                    "**Konto na zamówienie**\n"
+                    "Opisz dokładnie, jakie konto chcesz zamówić."
+                ),
+                "ping_role": False,
+            },
         },
     },
+
     "Zgłoszenia": {
-        "emoji": "🚨",
-        "word": "zgloszenie",
         "category_id": REPORTS_CATEGORY_ID,
         "subcategories": {
-            "Zgłoś użytkownika": "uzytkownik",
-            "Zgłoś scam": "scam",
-            "Inne zgłoszenie": "inne",
+            "Zgłoś użytkownika": {
+                "name": "uzytkownik",
+                "message": (
+                    "**Zgłoś użytkownika**\n"
+                    "Opisz, kogo chcesz zgłosić i dodaj dowody, "
+                    "jeśli je posiadasz."
+                ),
+                "ping_role": True,
+            },
+            "Zgłoś scam": {
+                "name": "scam",
+                "message": (
+                    "**Zgłoś scam**\n"
+                    "Opisz dokładnie sytuację i dodaj dowody."
+                ),
+                "ping_role": True,
+            },
+            "Inne zgłoszenie": {
+                "name": "inne",
+                "message": (
+                    "**Inne zgłoszenie**\n"
+                    "Opisz dokładnie, czego dotyczy zgłoszenie."
+                ),
+                "ping_role": True,
+            },
         },
     },
+
     "Pytanie / Błąd": {
-        "emoji": "❓",
-        "word": "problem",
         "category_id": QUESTIONS_ERRORS_CATEGORY_ID,
         "subcategories": {
-            "Pytanie": "pytanie",
-            "Błąd serwera": "serwer",
-            "Problem z botem": "bot",
-            "Inne": "inne",
+            "Pytanie": {
+                "name": "pytanie",
+                "message": (
+                    "**Pytanie**\n"
+                    "Opisz dokładnie swoje pytanie."
+                ),
+                "ping_role": True,
+            },
+            "Błąd serwera": {
+                "name": "serwer",
+                "message": (
+                    "**Błąd serwera**\n"
+                    "Opisz dokładnie występujący błąd "
+                    "i dodaj dowody, jeśli je posiadasz."
+                ),
+                "ping_role": True,
+            },
+            "Problem z botem": {
+                "name": "bot",
+                "message": (
+                    "**Problem z botem**\n"
+                    "Opisz dokładnie problem z botem "
+                    "i dodaj dowody, jeśli je posiadasz."
+                ),
+                "ping_role": True,
+            },
+            "Inne": {
+                "name": "inne",
+                "message": (
+                    "**Inne**\n"
+                    "Opisz dokładnie, czego potrzebujesz."
+                ),
+                "ping_role": True,
+            },
         },
     },
+
     "Inne": {
-        "emoji": "📌",
-        "word": "inne",
         "category_id": OTHER_CATEGORY_ID,
         "subcategories": {
-            "Współpraca": "wspolpraca",
-            "Propozycja": "propozycja",
-            "Inne": "inne",
+            "Współpraca": {
+                "name": "wspolpraca",
+                "message": (
+                    "**Współpraca**\n"
+                    "Opisz, czego ma dotyczyć współpraca."
+                ),
+                "ping_role": True,
+            },
+            "Propozycja": {
+                "name": "propozycja",
+                "message": (
+                    "**Propozycja**\n"
+                    "Opisz dokładnie swoją propozycję."
+                ),
+                "ping_role": True,
+            },
+            "Inne": {
+                "name": "inne",
+                "message": (
+                    "**Inne**\n"
+                    "Opisz dokładnie, czego potrzebujesz."
+                ),
+                "ping_role": True,
+            },
         },
     },
-}
-
-
-SUBCATEGORY_MESSAGES = {
-    "Zamówienie": "**Zamówienie**\nOpisz, czego potrzebujesz w związku z zamówieniem.",
-    "NFA": "**NFA**\nOpisz, jakie konto NFA chcesz kupić.",
-    "FA": "**FA**\nOpisz, jakie konto FA chcesz kupić.",
-    "Live": "**Live**\nNapisz, jakie konto chcesz kupić z live.",
-    "Custom": "**Custom**\nOpisz, jakie konto chcesz zamówić.",
-    "Użytkownik": "**Użytkownik**\nOpisz, kogo chcesz zgłosić i dodaj dowody, jeśli je posiadasz.",
-    "Scam": "**Scam**\nOpisz sytuację i dodaj dowody, jeśli je posiadasz.",
-    "Zgłoszenie": "**Zgłoszenie**\nOpisz dokładnie, czego dotyczy zgłoszenie.",
-    "Pytanie": "**Pytanie**\nOpisz dokładnie swoje pytanie.",
-    "Błąd": "**Błąd**\nOpisz dokładnie występujący błąd i dodaj dowody, jeśli je posiadasz.",
-    "Bot": "**Bot**\nOpisz dokładnie problem z botem i dodaj dowody, jeśli je posiadasz.",
-    "Współpraca": "**Współpraca**\nOpisz, czego ma dotyczyć współpraca.",
-    "Propozycja": "**Propozycja**\nOpisz dokładnie swoją propozycję.",
-    "Inne": "**Inne**\nOpisz dokładnie, czego potrzebujesz.",
 }
 
 
@@ -600,10 +682,10 @@ def get_ticket_category(category_name):
     if info is None:
         return None
 
-    channel = bot.get_channel(info["category_id"])
+    category = bot.get_channel(info["category_id"])
 
-    if isinstance(channel, discord.CategoryChannel):
-        return channel
+    if isinstance(category, discord.CategoryChannel):
+        return category
 
     return None
 
@@ -612,39 +694,41 @@ def clean_username(username):
     username = username.lower()
 
     username = re.sub(
-        r"[^a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ_-]",
+        r"[^a-z0-9ąćęłńóśźż_-]",
         "-",
         username,
     )
 
-    username = username.strip("-")
+    username = re.sub(
+        r"-+",
+        "-",
+        username,
+    )
+
+    username = username.strip("-_")
 
     if not username:
-        return "user"
+        username = "uzytkownik"
 
     return username[:70]
 
 
-def build_ticket_name(subcategory, member):
-    names = {
-        "Zamówienie": "zamowienie",
-        "NFA": "nfa",
-        "FA": "fa",
-        "Live": "live",
-        "Custom": "custom",
-        "Użytkownik": "uzytkownik",
-        "Scam": "scam",
-        "Zgłoszenie": "zgloszenie",
-        "Pytanie": "pytanie",
-        "Błąd": "blad",
-        "Bot": "bot",
-        "Współpraca": "wspolpraca",
-        "Propozycja": "propozycja",
-        "Inne": "inne",
-    }
+def build_ticket_name(subcategory_name, member):
+    subcategory_info = None
+
+    for category in CATEGORY_INFO.values():
+        if subcategory_name in category["subcategories"]:
+            subcategory_info = category["subcategories"][subcategory_name]
+            break
+
+    if subcategory_info is None:
+        prefix = "ticket"
+    else:
+        prefix = subcategory_info["name"]
+
     username = clean_username(member.name)
-    word = names.get(subcategory, "ticket")
-    return f"{word}-{username}"
+
+    return f"{prefix}-{username}"[:100]
 
 
 def can_manage_ticket(member):
@@ -655,18 +739,62 @@ def can_manage_ticket(member):
     )
 
 
-def should_ping_order_role(category_name, subcategory):
-    if category_name != "Zamówienia":
-        return True
+async def send_ticket_message(
+    channel,
+    member,
+    category_name,
+    subcategory_name,
+):
+    category_info = CATEGORY_INFO.get(category_name)
 
-    return subcategory == "Zamówienie"
+    if category_info is None:
+        return
+
+    subcategory_info = category_info["subcategories"].get(
+        subcategory_name
+    )
+
+    if subcategory_info is None:
+        return
+
+    embed = discord.Embed(
+        title="Ticket",
+        description=subcategory_info["message"],
+        color=EMBED_COLOR,
+    )
+
+    ping_content = member.mention
+
+    if subcategory_info["ping_role"]:
+        role = channel.guild.get_role(ORDER_PING_ROLE_ID)
+
+        if role is not None:
+            ping_content += f" {role.mention}"
+
+    await channel.send(
+        content=ping_content,
+        embed=embed,
+        view=TicketView(),
+        allowed_mentions=discord.AllowedMentions(
+            users=True,
+            roles=True,
+        ),
+    )
 
 
-async def create_ticket(interaction, category_name, subcategory):
+async def create_ticket(
+    interaction,
+    category_name,
+    subcategory_name,
+):
     guild = interaction.guild
     member = interaction.user
 
     if guild is None:
+        await interaction.response.send_message(
+            "Nie udało się utworzyć ticketu.",
+            ephemeral=True,
+        )
         return
 
     if count_open_tickets(member.id) >= 1:
@@ -685,7 +813,17 @@ async def create_ticket(interaction, category_name, subcategory):
         )
         return
 
-    ticket_name = build_ticket_name(subcategory, member)
+    if subcategory_name not in CATEGORY_INFO[category_name]["subcategories"]:
+        await interaction.response.send_message(
+            "Nie znaleziono wybranej podkategorii.",
+            ephemeral=True,
+        )
+        return
+
+    ticket_name = build_ticket_name(
+        subcategory_name,
+        member,
+    )
 
     staff_role = guild.get_role(STAFF_ROLE_ID)
     tt_mod_role = guild.get_role(TT_MOD_ROLE_ID)
@@ -695,6 +833,7 @@ async def create_ticket(interaction, category_name, subcategory):
         guild.default_role: discord.PermissionOverwrite(
             view_channel=False,
         ),
+
         member: discord.PermissionOverwrite(
             view_channel=True,
             send_messages=True,
@@ -704,7 +843,11 @@ async def create_ticket(interaction, category_name, subcategory):
         ),
     }
 
-    for role in (staff_role, tt_mod_role, technik_role):
+    for role in (
+        staff_role,
+        tt_mod_role,
+        technik_role,
+    ):
         if role is not None:
             overwrites[role] = discord.PermissionOverwrite(
                 view_channel=True,
@@ -719,7 +862,7 @@ async def create_ticket(interaction, category_name, subcategory):
             name=ticket_name,
             category=category,
             overwrites=overwrites,
-            reason="Ticket created",
+            reason="Utworzenie ticketu",
         )
 
     except discord.Forbidden:
@@ -729,9 +872,9 @@ async def create_ticket(interaction, category_name, subcategory):
         )
         return
 
-    except discord.HTTPException as exc:
+    except discord.HTTPException:
         await interaction.response.send_message(
-            f"Nie udało się utworzyć ticketu: {exc}",
+            "Nie udało się utworzyć ticketu.",
             ephemeral=True,
         )
         return
@@ -742,46 +885,34 @@ async def create_ticket(interaction, category_name, subcategory):
         "author_id": member.id,
         "author_name": str(member),
         "category": category_name,
-        "subcategory": subcategory,
+        "subcategory": subcategory_name,
         "opened_at": now.isoformat(),
         "open": True,
     }
 
-    save_json(TICKETS_FILE, tickets_data)
+    save_json(
+        TICKETS_FILE,
+        tickets_data,
+    )
 
     await interaction.response.send_message(
-        f"Ticket utworzony: {channel.mention}",
+        f"Ticket został utworzony: {channel.mention}",
         ephemeral=True,
     )
 
-    message_data = SUBCATEGORY_MESSAGES.get(
-        subcategory,
-        "**Ticket**\nOpisz dokładnie, czego potrzebujesz.",
-    )
-
-    embed = discord.Embed(
-        title="Ticket",
-        description=message_data,
-        color=EMBED_COLOR,
-    )
-
-    ping = member.mention
-
-    if should_ping_order_role(category_name, subcategory):
-        ping_role = guild.get_role(ORDER_PING_ROLE_ID)
-
-        if ping_role is not None:
-            ping = f"{ping} {ping_role.mention}"
-
-    await channel.send(
-        content=ping,
-        embed=embed,
-        view=TicketView(),
-    )
+    try:
+        await send_ticket_message(
+            channel,
+            member,
+            category_name,
+            subcategory_name,
+        )
+    except discord.HTTPException:
+        pass
 
 
 # =========================================================
-# TICKET PANEL
+# PANEL GŁÓWNY TICKETÓW
 # =========================================================
 
 class TicketPanelView(discord.ui.View):
@@ -804,6 +935,10 @@ class TicketPanelView(discord.ui.View):
             ephemeral=True,
         )
 
+
+# =========================================================
+# WYBÓR KATEGORII
+# =========================================================
 
 class MainCategoryView(discord.ui.View):
     def __init__(self):
@@ -839,14 +974,21 @@ class MainCategoryView(discord.ui.View):
         self.select.callback = self.category_selected
         self.add_item(self.select)
 
-    async def category_selected(self, interaction):
-        category = self.select.values[0]
+    async def category_selected(
+        self,
+        interaction: discord.Interaction,
+    ):
+        category_name = self.select.values[0]
 
         await interaction.response.edit_message(
             content="Wybierz podkategorię:",
-            view=SubcategoryView(category),
+            view=SubcategoryView(category_name),
         )
 
+
+# =========================================================
+# WYBÓR PODKATEGORII
+# =========================================================
 
 class SubcategoryView(discord.ui.View):
     def __init__(self, category_name):
@@ -869,6 +1011,7 @@ class SubcategoryView(discord.ui.View):
         self.select = discord.ui.Select(
             placeholder="Wybierz podkategorię",
             options=options,
+            custom_id="ticket_subcategory",
         )
 
         self.select.callback = self.subcategory_selected
@@ -883,16 +1026,22 @@ class SubcategoryView(discord.ui.View):
         back_button.callback = self.back
         self.add_item(back_button)
 
-    async def subcategory_selected(self, interaction):
-        subcategory = self.select.values[0]
+    async def subcategory_selected(
+        self,
+        interaction: discord.Interaction,
+    ):
+        subcategory_name = self.select.values[0]
 
         await create_ticket(
             interaction,
             self.category_name,
-            subcategory,
+            subcategory_name,
         )
 
-    async def back(self, interaction):
+    async def back(
+        self,
+        interaction: discord.Interaction,
+    ):
         await interaction.response.edit_message(
             content="Wybierz kategorię:",
             view=MainCategoryView(),
@@ -900,7 +1049,7 @@ class SubcategoryView(discord.ui.View):
 
 
 # =========================================================
-# TICKET CLOSE
+# ZAMYKANIE TICKETU
 # =========================================================
 
 class TicketView(discord.ui.View):
@@ -932,10 +1081,12 @@ class TicketView(discord.ui.View):
 
         channel = interaction.channel
 
-        if channel is None:
+        if not isinstance(channel, discord.TextChannel):
             return
 
-        ticket_info = tickets_data.get(str(channel.id))
+        ticket_info = tickets_data.get(
+            str(channel.id)
+        )
 
         if ticket_info is None:
             await interaction.response.send_message(
@@ -951,20 +1102,29 @@ class TicketView(discord.ui.View):
             )
             return
 
-        opened_at = datetime.fromisoformat(
-            ticket_info["opened_at"]
-        )
+        ticket_info["open"] = False
 
         closed_at = datetime.now(timezone.utc)
 
+        ticket_info["closed_by"] = interaction.user.id
+        ticket_info["closed_by_name"] = str(interaction.user)
+        ticket_info["closed_at"] = closed_at.isoformat()
+
+        save_json(
+            TICKETS_FILE,
+            tickets_data,
+        )
+
         await interaction.response.send_message(
-            "Ticket zamknięty. Kanał zostanie usunięty za 15 sekund."
+            "Ticket został zamknięty. Kanał zostanie usunięty za 15 sekund."
         )
 
         button.disabled = True
 
         try:
-            await interaction.message.edit(view=self)
+            await interaction.message.edit(
+                view=self
+            )
         except (
             discord.NotFound,
             discord.Forbidden,
@@ -972,26 +1132,36 @@ class TicketView(discord.ui.View):
         ):
             pass
 
-        transcript_lines = [
-            "Uzi Shop Ticket Transcript",
-            "========================================",
-            f"Channel: {channel.name}",
-            f"Opened by: {ticket_info.get('author_name', 'Unknown')}",
-            f"Opened at: {opened_at.strftime('%d.%m.%Y %H:%M:%S UTC')}",
-            f"Closed by: {interaction.user}",
-            f"Closed at: {closed_at.strftime('%d.%m.%Y %H:%M:%S UTC')}",
-            f"Category: {ticket_info.get('category', 'Unknown')}",
-        ]
+        opened_at_text = ticket_info.get(
+            "opened_at",
+            "Nieznana data",
+        )
 
-        if ticket_info.get("subcategory"):
-            transcript_lines.append(
-                f"Subcategory: {ticket_info['subcategory']}"
+        try:
+            opened_at = datetime.fromisoformat(
+                opened_at_text
             )
 
-        transcript_lines.extend([
+            opened_at_display = opened_at.strftime(
+                "%d.%m.%Y %H:%M:%S UTC"
+            )
+
+        except (ValueError, TypeError):
+            opened_at_display = "Nieznana data"
+
+        transcript_lines = [
+            "UZi Shop - Transkrypcja ticketu",
+            "========================================",
+            f"Kanał: {channel.name}",
+            f"Autor: {ticket_info.get('author_name', 'Nieznany')}",
+            f"Data otwarcia: {opened_at_display}",
+            f"Zamknął: {interaction.user}",
+            f"Data zamknięcia: {closed_at.strftime('%d.%m.%Y %H:%M:%S UTC')}",
+            f"Kategoria: {ticket_info.get('category', 'Nieznana')}",
+            f"Podkategoria: {ticket_info.get('subcategory', 'Nieznana')}",
             "========================================",
             "",
-        ])
+        ]
 
         try:
             async for message in channel.history(
@@ -1003,15 +1173,23 @@ class TicketView(discord.ui.View):
                 )
 
                 transcript_lines.append(
-                    f"[{timestamp}] {message.author} ({message.author.id}):"
+                    f"[{timestamp}] {message.author} "
+                    f"({message.author.id}):"
                 )
 
                 if message.content:
-                    transcript_lines.append(message.content)
+                    transcript_lines.append(
+                        message.content
+                    )
 
                 for attachment in message.attachments:
                     transcript_lines.append(
-                        f"Attachment: {attachment.url}"
+                        f"Załącznik: {attachment.url}"
+                    )
+
+                if message.embeds:
+                    transcript_lines.append(
+                        "[Wiadomość zawierała osadzoną wiadomość]"
                     )
 
                 transcript_lines.append("")
@@ -1021,10 +1199,14 @@ class TicketView(discord.ui.View):
                 "[Nie udało się pobrać pełnej historii kanału]"
             )
 
-        transcript_text = "\n".join(transcript_lines)
+        transcript_text = "\n".join(
+            transcript_lines
+        )
 
         transcript_file = discord.File(
-            io.BytesIO(transcript_text.encode("utf-8")),
+            io.BytesIO(
+                transcript_text.encode("utf-8")
+            ),
             filename=(
                 f"ticket-"
                 f"{closed_at.strftime('%d%m%y')}-"
@@ -1032,36 +1214,44 @@ class TicketView(discord.ui.View):
             ),
         )
 
-        logs_channel = guild.get_channel(TICKET_LOGS_CHANNEL_ID)
+        logs_channel = guild.get_channel(
+            TICKET_LOGS_CHANNEL_ID
+        )
 
         if logs_channel is not None:
             try:
                 await logs_channel.send(
                     content=(
-                        f"Ticket transcript: **{channel.name}**\n"
-                        f"Opened by: {ticket_info.get('author_name', 'Unknown')}\n"
-                        f"Closed by: {interaction.user}"
+                        f"**Transkrypcja ticketu**\n"
+                        f"**Kanał:** {channel.name}\n"
+                        f"**Autor:** "
+                        f"{ticket_info.get('author_name', 'Nieznany')}\n"
+                        f"**Zamknął:** {interaction.user}"
                     ),
                     file=transcript_file,
                 )
-            except discord.HTTPException:
+
+            except (
+                discord.Forbidden,
+                discord.HTTPException,
+            ):
                 pass
-
-        ticket_info["open"] = False
-        ticket_info["closed_by"] = interaction.user.id
-        ticket_info["closed_by_name"] = str(interaction.user)
-        ticket_info["closed_at"] = closed_at.isoformat()
-
-        save_json(TICKETS_FILE, tickets_data)
 
         await asyncio.sleep(15)
 
-        tickets_data.pop(str(channel.id), None)
-        save_json(TICKETS_FILE, tickets_data)
+        tickets_data.pop(
+            str(channel.id),
+            None,
+        )
+
+        save_json(
+            TICKETS_FILE,
+            tickets_data,
+        )
 
         try:
             await channel.delete(
-                reason=f"Ticket closed by {interaction.user}"
+                reason=f"Ticket zamknięty przez {interaction.user}",
             )
         except (
             discord.Forbidden,
@@ -1072,22 +1262,27 @@ class TicketView(discord.ui.View):
 
 
 # =========================================================
-# TICKET PANEL COMMAND
+# KOMENDA PANELU TICKETÓW
 # =========================================================
 
 @bot.command(name="ticket")
 @staff_only
 async def ticket(ctx):
-    channel = bot.get_channel(TICKET_PANEL_CHANNEL_ID)
+    channel = bot.get_channel(
+        TICKET_PANEL_CHANNEL_ID
+    )
 
     if channel is None:
-        await ctx.send("Nie znaleziono kanału panelu ticketów.")
+        await ctx.send(
+            "Nie znaleziono kanału panelu ticketów."
+        )
         return
 
     embed = discord.Embed(
         title="Stwórz ticket",
         description=(
-            "Wybierz kategorię poniżej, aby utworzyć ticket"
+            "Wybierz kategorię poniżej, "
+            "aby utworzyć ticket"
         ),
         color=EMBED_COLOR,
     )
@@ -1104,51 +1299,66 @@ async def ticket(ctx):
 
 
 # =========================================================
-# TICKET RULES
+# REGULAMIN TICKETÓW
 # =========================================================
 
 @bot.command(name="zasadyticket")
 @staff_only
 async def zasadyticket(ctx):
-    channel = bot.get_channel(TICKET_RULES_CHANNEL_ID)
+    channel = bot.get_channel(
+        TICKET_RULES_CHANNEL_ID
+    )
 
     if channel is None:
-        await ctx.send("Nie znaleziono kanału regulaminu ticketów.")
+        await ctx.send(
+            "Nie znaleziono kanału regulaminu ticketów."
+        )
         return
 
     embed = discord.Embed(
         title="REGULAMIN TICKETÓW",
         description=(
             "**01 ・ REALIZACJA ZAMÓWIENIA**\n"
-            "Zamówienie zostanie dostarczone w ciągu **24 godzin od zakupu**\n\n"
+            "Zamówienie zostanie dostarczone w ciągu "
+            "**24 godzin od zakupu**\n\n"
 
             "**02 ・ ODPOWIEDZIALNOŚĆ**\n"
-            "Po sprzedaży konta **nie ponosimy odpowiedzialności za jego dalsze działanie**\n"
-            "Nie odpowiadamy za blokady, odebranie konta przez właściciela ani inne problemy powstałe po sprzedaży\n\n"
+            "Po sprzedaży konta **nie ponosimy odpowiedzialności "
+            "za jego dalsze działanie**\n"
+            "Nie odpowiadamy za blokady, odebranie konta przez "
+            "właściciela ani inne problemy powstałe po sprzedaży\n\n"
 
             "**03 ・ TICKETY**\n"
-            "Wszystkie sprawy dotyczące zamówień, współpracy lub innych problemów należy zgłaszać **tylko i wyłącznie przez ticket**\n\n"
+            "Wszystkie sprawy dotyczące zamówień, współpracy "
+            "lub innych problemów należy zgłaszać "
+            "**tylko i wyłącznie przez ticket**\n\n"
 
             "**04 ・ ZAMYKANIE TICKETÓW**\n"
             "Ticket __może zostać zamknięty__, jeśli:\n"
             "• nie odpowiadasz przez **24 godziny**\n"
             "• po zakupie nie wyślesz **legitki w ciągu 1 godziny**\n"
-            "• otworzysz ticket i nie opiszesz sprawy przez **1 godzinę**\n"
+            "• otworzysz ticket i nie opiszesz sprawy przez "
+            "**1 godzinę**\n"
             "• otworzysz ticket w **nieodpowiedniej kategorii**\n\n"
 
             "**05 ・ KARY**\n"
-            "Za niestosowanie się do regulaminu mogą zostać nałożone **kary według naszego uznania**\n\n"
+            "Za niestosowanie się do regulaminu mogą zostać "
+            "nałożone **kary według naszego uznania**\n\n"
 
             "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-            "**Dokonując zakupu lub otwierając ticket, potwierdzasz, że zapoznałeś się z regulaminem i go akceptujesz.**\n\n"
+            "**Dokonując zakupu lub otwierając ticket, "
+            "potwierdzasz, że zapoznałeś się z regulaminem "
+            "i go akceptujesz.**\n\n"
 
             "**Uzi Stock**"
         ),
         color=EMBED_COLOR,
     )
 
-    await channel.send(embed=embed)
+    await channel.send(
+        embed=embed
+    )
 
     try:
         await ctx.message.delete()
@@ -1157,16 +1367,20 @@ async def zasadyticket(ctx):
 
 
 # =========================================================
-# SERVER RULES
+# REGULAMIN SERWERA
 # =========================================================
 
 @bot.command(name="regulamin")
 @staff_only
 async def regulamin(ctx):
-    channel = bot.get_channel(REGULAMIN_CHANNEL_ID)
+    channel = bot.get_channel(
+        REGULAMIN_CHANNEL_ID
+    )
 
     if channel is None:
-        await ctx.send("Nie znaleziono kanału regulaminu.")
+        await ctx.send(
+            "Nie znaleziono kanału regulaminu."
+        )
         return
 
     embed = discord.Embed(
@@ -1180,24 +1394,30 @@ async def regulamin(ctx):
             "Zakaz spamu, floodu i celowego zaśmiecania kanałów\n\n"
 
             "**03 ・ REKLAMY**\n"
-            "Zakaz reklamowania innych serwerów, sklepów i usług bez zgody administracji\n\n"
+            "Zakaz reklamowania innych serwerów, sklepów "
+            "i usług bez zgody administracji\n\n"
 
             "**04 ・ OSZUSTWA**\n"
-            "Zakaz scamów, wyłudzeń i prób oszukiwania innych użytkowników\n\n"
+            "Zakaz scamów, wyłudzeń i prób oszukiwania "
+            "innych użytkowników\n\n"
 
             "**05 ・ NSFW**\n"
             "Zakaz treści NSFW i nieodpowiednich materiałów\n\n"
 
             "**06 ・ KARY**\n"
-            "Za łamanie regulaminu mogą zostać nałożone kary według uznania administracji\n\n"
+            "Za łamanie regulaminu mogą zostać nałożone "
+            "kary według uznania administracji\n\n"
 
             "**07 ・ BŁĘDY**\n"
-            "Wykorzystywanie błędów serwera lub bota w celu uzyskania korzyści jest zabronione"
+            "Wykorzystywanie błędów serwera lub bota "
+            "w celu uzyskania korzyści jest zabronione"
         ),
         color=EMBED_COLOR,
     )
 
-    await channel.send(embed=embed)
+    await channel.send(
+        embed=embed
+    )
 
     try:
         await ctx.message.delete()
@@ -1212,10 +1432,14 @@ async def regulamin(ctx):
 @bot.command(name="faq")
 @staff_only
 async def faq(ctx):
-    channel = bot.get_channel(FAQ_CHANNEL_ID)
+    channel = bot.get_channel(
+        FAQ_CHANNEL_ID
+    )
 
     if channel is None:
-        await ctx.send("Nie znaleziono kanału FAQ.")
+        await ctx.send(
+            "Nie znaleziono kanału FAQ."
+        )
         return
 
     embed = discord.Embed(
@@ -1226,7 +1450,7 @@ async def faq(ctx):
             f"• <#{FAQ_CHANNEL_ID}> → tutaj jesteś\n"
             f"• <#{PAYMENT_CHANNEL_ID}> → dostępne metody płatności\n"
             f"• <#{SOCIALS_CHANNEL_ID}> → nasze social media\n"
-            f"• <#1546579824401977364> → lista zaufanych klientów i osób\n\n"
+            "• <#1546579824401977364> → lista zaufanych klientów i osób\n\n"
 
             "## **02 ・ OGŁOSZENIA**\n"
             "• <#1546579637709312121> → ważne informacje i aktualizacje\n"
@@ -1239,14 +1463,16 @@ async def faq(ctx):
             f"• <#{INVITES_CHANNEL_ID}> → informacje o zaproszeniach\n\n"
 
             "## **04 ・ SKLEP**\n"
-            f"• <#{STOCK_CHANNEL_ID}> → dostępne konta nfa\n"
+            f"• <#{STOCK_CHANNEL_ID}> → dostępne konta NFA\n"
             f"• <#{TICKET_PANEL_CHANNEL_ID}> → zakup lub pomoc\n"
             f"• <#{LEGITCHECK_CHANNEL_ID}> → legitchecki"
         ),
         color=EMBED_COLOR,
     )
 
-    await channel.send(embed=embed)
+    await channel.send(
+        embed=embed
+    )
 
     try:
         await ctx.message.delete()
@@ -1255,7 +1481,7 @@ async def faq(ctx):
 
 
 # =========================================================
-# SERVER PERMISSIONS
+# UPRAWNIENIA SERWERA
 # =========================================================
 
 async def set_everyone_hidden(channel):
@@ -1273,7 +1499,12 @@ async def set_everyone_hidden(channel):
         pass
 
 
-async def set_role_access(channel, role, *, send_messages=True):
+async def set_role_access(
+    channel,
+    role,
+    *,
+    send_messages=True,
+):
     if role is None:
         return
 
@@ -1292,7 +1523,10 @@ async def set_role_access(channel, role, *, send_messages=True):
         pass
 
 
-async def set_verified_view(channel, verified_role):
+async def set_verified_view(
+    channel,
+    verified_role,
+):
     if verified_role is None:
         return
 
@@ -1315,10 +1549,21 @@ async def hide_category_completely(category):
 async def apply_server_permissions(guild):
     everyone = guild.default_role
 
-    verified_role = guild.get_role(VERIFIED_ROLE_ID)
-    staff_role = guild.get_role(STAFF_ROLE_ID)
-    tt_mod_role = guild.get_role(TT_MOD_ROLE_ID)
-    technik_role = guild.get_role(TECHNIK_ROLE_ID)
+    verified_role = guild.get_role(
+        VERIFIED_ROLE_ID
+    )
+
+    staff_role = guild.get_role(
+        STAFF_ROLE_ID
+    )
+
+    tt_mod_role = guild.get_role(
+        TT_MOD_ROLE_ID
+    )
+
+    technik_role = guild.get_role(
+        TECHNIK_ROLE_ID
+    )
 
     if verified_role is None:
         return
@@ -1333,7 +1578,6 @@ async def apply_server_permissions(guild):
         if role is not None
     ]
 
-    # General categories
     for category in guild.categories:
         if category.id in TICKET_CATEGORY_IDS:
             continue
@@ -1341,7 +1585,9 @@ async def apply_server_permissions(guild):
         if category.id == BLACKLIST_CATEGORY_ID:
             continue
 
-        await hide_category_completely(category)
+        await hide_category_completely(
+            category
+        )
 
         try:
             await category.set_permissions(
@@ -1352,7 +1598,10 @@ async def apply_server_permissions(guild):
             pass
 
         for role in staff_roles:
-            await set_role_access(category, role)
+            await set_role_access(
+                category,
+                role,
+            )
 
         for channel in category.channels:
             if channel.id == VERIFICATION_CHANNEL_ID:
@@ -1364,12 +1613,11 @@ async def apply_server_permissions(guild):
             )
 
             for role in staff_roles:
-                await set_role_access(channel, role)
+                await set_role_access(
+                    channel,
+                    role,
+                )
 
-    # Ticket categories are not globally hidden here.
-    # Ticket channels get their own permission overwrites.
-
-    # Information category
     information_category = guild.get_channel(
         INFORMATION_CATEGORY_ID
     )
@@ -1428,8 +1676,9 @@ async def apply_server_permissions(guild):
             except discord.Forbidden:
                 pass
 
-    # Live channel
-    live_channel = guild.get_channel(LIVE_CHANNEL_ID)
+    live_channel = guild.get_channel(
+        LIVE_CHANNEL_ID
+    )
 
     if live_channel is not None:
         try:
@@ -1458,8 +1707,9 @@ async def apply_server_permissions(guild):
         except discord.Forbidden:
             pass
 
-    # Shop category
-    shop_category = guild.get_channel(SHOP_CATEGORY_ID)
+    shop_category = guild.get_channel(
+        SHOP_CATEGORY_ID
+    )
 
     if shop_category is not None:
         try:
@@ -1515,8 +1765,9 @@ async def apply_server_permissions(guild):
             except discord.Forbidden:
                 pass
 
-    # Levels information channel
-    levels_channel = guild.get_channel(LEVELS_CHANNEL_ID)
+    levels_channel = guild.get_channel(
+        LEVELS_CHANNEL_ID
+    )
 
     if levels_channel is not None:
         try:
@@ -1545,8 +1796,9 @@ async def apply_server_permissions(guild):
         except discord.Forbidden:
             pass
 
-    # Invites information channel
-    invites_channel = guild.get_channel(INVITES_CHANNEL_ID)
+    invites_channel = guild.get_channel(
+        INVITES_CHANNEL_ID
+    )
 
     if invites_channel is not None:
         try:
@@ -1575,7 +1827,6 @@ async def apply_server_permissions(guild):
         except discord.Forbidden:
             pass
 
-    # Verification channel
     verification_channel = guild.get_channel(
         VERIFICATION_CHANNEL_ID
     )
@@ -1615,7 +1866,9 @@ async def setpermissions(ctx):
     if ctx.guild is None:
         return
 
-    await apply_server_permissions(ctx.guild)
+    await apply_server_permissions(
+        ctx.guild
+    )
 
     await ctx.send(
         "Uprawnienia serwera zostały skonfigurowane.",
@@ -1629,12 +1882,18 @@ async def setpermissions(ctx):
 
 
 # =========================================================
-# ERRORS
+# OBSŁUGA BŁĘDÓW
 # =========================================================
 
 @bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
+async def on_command_error(
+    ctx,
+    error,
+):
+    if isinstance(
+        error,
+        commands.CommandNotFound,
+    ):
         return
 
     if isinstance(
@@ -1650,14 +1909,20 @@ async def on_command_error(ctx, error):
         )
         return
 
-    if isinstance(error, commands.MissingRequiredArgument):
+    if isinstance(
+        error,
+        commands.MissingRequiredArgument,
+    ):
         await ctx.send(
             "Brakuje wymaganych argumentów.",
             delete_after=4,
         )
         return
 
-    if isinstance(error, commands.BadArgument):
+    if isinstance(
+        error,
+        commands.BadArgument,
+    ):
         await ctx.send(
             "Nieprawidłowy argument.",
             delete_after=4,
@@ -1665,12 +1930,13 @@ async def on_command_error(ctx, error):
         return
 
     print(
-        f"[COMMAND ERROR] {type(error).__name__}: {error}"
+        f"[BŁĄD KOMENDY] "
+        f"{type(error).__name__}: {error}"
     )
 
 
 # =========================================================
-# READY
+# GOTOWOŚĆ BOTA
 # =========================================================
 
 views_added = False
@@ -1681,13 +1947,27 @@ async def on_ready():
     global views_added
 
     if not views_added:
-        bot.add_view(VerifyView())
-        bot.add_view(TicketPanelView())
-        bot.add_view(TicketView())
+        bot.add_view(
+            VerifyView()
+        )
+
+        bot.add_view(
+            TicketPanelView()
+        )
+
+        bot.add_view(
+            TicketView()
+        )
+
         views_added = True
 
-    print(f"Logged in as {bot.user}")
-    print(f"Connected to {len(bot.guilds)} server(s)")
+    print(
+        f"Zalogowano jako {bot.user}"
+    )
+
+    print(
+        f"Połączono z {len(bot.guilds)} serwerami"
+    )
 
 
 # =========================================================
@@ -1696,12 +1976,14 @@ async def on_ready():
 
 if not TOKEN:
     raise RuntimeError(
-        "DISCORD_TOKEN nie jest ustawiony w zmiennych środowiskowych."
+        "DISCORD_TOKEN nie jest ustawiony "
+        "w zmiennych środowiskowych."
     )
 
 
 # =========================================================
-# RUN
+# URUCHOMIENIE
 # =========================================================
 
 bot.run(TOKEN)
+```
