@@ -1,3 +1,4 @@
+```python
 import asyncio
 import io
 import json
@@ -503,6 +504,46 @@ async def invites(ctx):
     )
 
     await ctx.send(embed=embed)
+
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        pass
+
+
+# =========================================================
+# MYSTERY BOXY
+# =========================================================
+
+@bot.command(name="mysterybox")
+@staff_only
+async def mysterybox(ctx):
+    channel = bot.get_channel(STOCK_CHANNEL_ID)
+
+    if channel is None:
+        await ctx.send(
+            "Nie znaleziono kanału stock.",
+            delete_after=4,
+        )
+        return
+
+    embed = discord.Embed(
+        title="🎁 MYSTERY BOXY",
+        description=(
+            "**Mystery Box** to paczka losowych kont **NFA** "
+            "wybranych z naszej dostępnej puli. Każdy box jest niespodzianką.\n\n"
+            
+            "📦 **MYSTERY BOX・x5** → **5x kont NFA** • 💰 **50 PLN**\n"
+            "📦 **MYSTERY BOX・x10** → **10x kont NFA + 1 BONUSOWE** • 💰 **100 PLN**\n"
+            "📦 **MYSTERY BOX・x15** → **15x kont NFA + 2 BONUSOWE** • 💰 **150 PLN**\n"
+            "📦 **MYSTERY BOX・x20** → **20x kont NFA + 3 BONUSOWE** • 💰 **200 PLN**\n\n"
+            
+            "🎲 **Im większy box, tym więcej bonusowych kont otrzymujesz**"
+        ),
+        color=EMBED_COLOR,
+    )
+
+    await channel.send(embed=embed)
 
     try:
         await ctx.message.delete()
@@ -1985,3 +2026,4 @@ if not TOKEN:
 # =========================================================
 
 bot.run(TOKEN)
+```
