@@ -335,10 +335,11 @@ async def platnosc(ctx):
         return
 
     embed = discord.Embed(
+        title="Metody płatności",
         description=(
             "<:blik1:1546610208388808784> **Kod BLIK** → Prowizja wynosi: **0%**\n"
-            "<:psc:1553093771464417300> **Kod PSC** *(bez paragonu)* → Prowizja wynosi: **15%**\n"
-            "<:psc:1553093771464417300> **Kod PSC** *(z paragonem)* → Prowizja wynosi: **20%**\n\n"
+            "<:psc:1553093771464417300> **Kod PSC** *(bez paragonu)* → Prowizja wynosi: **20%**\n"
+            "<:psc:1553093771464417300> **Kod PSC** *(z paragonem)* → Prowizja wynosi: **15%**\n\n"
             "Po zakup zapraszamy <#1546579992954273862> :green_heart:"
         ),
         color=EMBED_COLOR
