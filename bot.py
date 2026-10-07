@@ -1859,6 +1859,24 @@ async def setpermissions(ctx):
     except discord.Forbidden:
         pass
 
+@bot.command(name="dajrole")
+@staff_only
+async def dajrole(ctx):
+    role = ctx.guild.get_role(VERIFIED_ROLE_ID)
+
+    if role is None:
+        await ctx.send("Nie znaleziono roli.")
+        return
+
+    for member in ctx.guild.members:
+        if role not in member.roles:
+            try:
+                await member.add_roles(role)
+            except discord.Forbidden:
+                pass
+
+    await ctx.send("Gotowe — rola została nadana wszystkim użytkownikom.", delete_after=5)
+
 
 # =========================================================
 # OBSŁUGA BŁĘDÓW
