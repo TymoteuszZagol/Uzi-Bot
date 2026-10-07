@@ -175,87 +175,26 @@ staff_mod_only = command_check({
 
 
 # =========================================================
-# WERYFIKACJA
+# AUTOMATYCZNA ROLA UŻYTKOWNIK
 # =========================================================
 
-class VerifyView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
+@bot.event
+async def on_member_join(member):
+    role = member.guild.get_role(VERIFIED_ROLE_ID)
 
-    @discord.ui.button(
-        label="Zweryfikuj",
-        style=discord.ButtonStyle.success,
-        custom_id="verify_button",
-    )
-    async def verify(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-        guild = interaction.guild
-
-        if guild is None:
-            return
-
-        role = guild.get_role(VERIFIED_ROLE_ID)
-
-        if role is None:
-            await interaction.response.send_message(
-                "Nie znaleziono roli użytkownika.",
-                ephemeral=True,
-            )
-            return
-
-        if role in interaction.user.roles:
-            await interaction.response.send_message(
-                "Jesteś już zweryfikowany.",
-                ephemeral=True,
-            )
-            return
-
-        try:
-            await interaction.user.add_roles(
-                role,
-                reason="Weryfikacja użytkownika",
-            )
-
-            await interaction.response.send_message(
-                "Pomyślnie się zweryfikowałeś.",
-                ephemeral=True,
-            )
-
-        except discord.Forbidden:
-            await interaction.response.send_message(
-                "Bot nie ma uprawnień do nadania roli użytkownika.",
-                ephemeral=True,
-            )
-
-
-@bot.command(name="weryfikacja")
-@staff_only
-async def weryfikacja(ctx):
-    channel = bot.get_channel(VERIFICATION_CHANNEL_ID)
-
-    if channel is None:
-        await ctx.send("Nie znaleziono kanału weryfikacji.")
+    if role is None:
+        print(f"Nie znaleziono roli Użytkownik na serwerze.")
         return
 
-    embed = discord.Embed(
-        title="Weryfikacja",
-        description="Kliknij przycisk poniżej, aby się zweryfikować.",
-        color=EMBED_COLOR,
-    )
-
-    await channel.send(
-        embed=embed,
-        view=VerifyView(),
-    )
-
     try:
-        await ctx.message.delete()
+        await member.add_roles(
+            role,
+            reason="Automatyczna rola po dołączeniu na serwer",
+        )
     except discord.Forbidden:
-        pass
-
+        print(f"Bot nie może nadać roli Użytkownik użytkownikowi {member}.")
+    except discord.HTTPException as exc:
+        print(f"Nie udało się nadać roli: {exc}")
 
 # =========================================================
 # PŁATNOŚCI
