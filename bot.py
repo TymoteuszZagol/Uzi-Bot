@@ -1945,10 +1945,6 @@ async def on_ready():
 
     if not views_added:
         bot.add_view(
-            ...
-        )
-
-        bot.add_view(
             TicketPanelView()
         )
 
