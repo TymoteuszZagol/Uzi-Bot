@@ -4,6 +4,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from views import VerifyView
 
 import discord
 from discord.ext import commands
