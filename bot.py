@@ -4,7 +4,6 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from views import VerifyView
 
 import discord
 from discord.ext import commands
@@ -1946,7 +1945,7 @@ async def on_ready():
 
     if not views_added:
         bot.add_view(
-            VerifyView()
+            ...
         )
 
         bot.add_view(
