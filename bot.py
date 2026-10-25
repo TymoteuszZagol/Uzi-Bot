@@ -221,7 +221,7 @@ async def delete_ticket_action(interaction: discord.Interaction):
         try:
             await logs_channel.send(
                 content=(f"**Transkrypcja ticketu**\nKanał: `{channel.name}`\n"
-                         f"Autor: {info.get('author_name', 'Nieznany')}\nUsunął: {interaction.user.mention}"),
+                         f"Autor: {info.get('author_name', 'Nieznany')}\nUsunął: {interaction.user.name}"),
                 file=transcript,
             )
         except (discord.Forbidden, discord.HTTPException):
@@ -291,9 +291,13 @@ class TicketPanelView(discord.ui.View):
         save_json(TICKETS_FILE, tickets_data)
 
         try:
-            # Panel/przyciski i instrukcja w pierwszej wiadomości.
-            await channel.send("Napisz czego potrzebujesz i czekaj na odpowiedź!", view=TicketView())
-            # Osobna wiadomość, bez pingowania ownera ani ról.
+            # Instrukcja i przyciski w embedzie z kolorem używanym w pozostałych embedach.
+            ticket_embed = discord.Embed(
+                description="Napisz czego potrzebujesz i czekaj na odpowiedź!",
+                color=EMBED_COLOR,
+            )
+            await channel.send(embed=ticket_embed, view=TicketView())
+            # Osobna wiadomość poza embedem; pingowany jest tylko autor ticketu.
             await channel.send(
                 f"{member.mention} NIE PINGUJ OWNERA",
                 allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
