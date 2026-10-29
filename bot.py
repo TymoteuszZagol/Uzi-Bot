@@ -13,7 +13,7 @@ from discord.ext import commands
 # =========================================================
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = "!"
-EMBED_COLOR = discord.Color(0x279A08)
+EMBED_COLOR = discord.Color(0x660F0F)
 
 STAFF_ROLE_ID = 1546584318615355403
 SUPPORT_ROLE_ID = 1546584450765299864  # dawne TT Mod
