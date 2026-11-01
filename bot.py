@@ -21,6 +21,7 @@ TECHNIK_ROLE_ID = 1551677652321046721
 TICKET_LOGS_CHANNEL_ID = 1546954575989178538
 OPEN_TICKETS_CATEGORY_ID = 1547332001961607268
 CLOSED_TICKETS_CATEGORY_ID = 1563565970377678971
+OWNER_ID = 1137677233641762869
 
 DATA_DIR = "/app/data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -238,7 +239,7 @@ class TicketPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Stwórz ticket", style=discord.ButtonStyle.success, custom_id="ticket_create")
+    @discord.ui.button(label="Stwórz ticket", style=discord.ButtonStyle.danger, custom_id="ticket_create")
     async def create_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         member = interaction.user
@@ -421,7 +422,7 @@ async def ban(ctx, member: discord.Member):
         await ctx.send("Bot nie może zbanować osoby z równą lub wyższą rolą od swojej.", delete_after=4)
         return
     try:
-        await member.ban(reason=f"Permanentny ban przez {ctx.author}")
+        await member.ban(reason=f"Permanentny ban przez {ctx.author}", delete_message_seconds=0)
         await ctx.send(f"Użytkownik **{member}** został zbanowany na stałe.", delete_after=5)
         try:
             await ctx.message.delete()
@@ -460,6 +461,61 @@ async def kick(ctx, member: discord.Member):
         await ctx.send("Bot nie ma uprawnień do wyrzucenia tej osoby.", delete_after=4)
     except discord.HTTPException:
         await ctx.send("Nie udało się wyrzucić tego użytkownika.", delete_after=4)
+
+
+# =========================================================
+# ANTY-PING OWNERA
+# =========================================================
+# Wykrywa tylko bezpośrednie oznaczenie w treści wiadomości (<@ID> lub <@!ID>).
+# Zwykły reply na wiadomość ownera nie zawiera takiego tekstu w content,
+# więc nie powoduje kary.
+OWNER_MENTION_PATTERN = re.compile(rf"<@!?{OWNER_ID}>")
+
+
+@bot.event
+async def on_message(message: discord.Message):
+    # Wiadomości od botów (w tym własne) są ignorowane - nie karzemy botów.
+    if message.author.bot:
+        return
+
+    # Wiadomości prywatne - tylko przekazanie do komend.
+    if message.guild is None or not isinstance(message.author, discord.Member):
+        await bot.process_commands(message)
+        return
+
+    # Owner nigdy nie jest karany.
+    if message.author.id == OWNER_ID:
+        await bot.process_commands(message)
+        return
+
+    if OWNER_MENTION_PATTERN.search(message.content or ""):
+        author = message.author
+
+        # 1. Usunięcie wiadomości z pingiem.
+        try:
+            await message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+        # 2. Timeout na dokładnie 1 godzinę.
+        muted = False
+        try:
+            await author.timeout(timedelta(hours=1), reason="Ping ownera = mute 1h")
+            muted = True
+        except (discord.Forbidden, discord.HTTPException):
+            print(f"[ANTY-PING] Nie udało się nałożyć timeoutu na {author} ({author.id}).")
+
+        # 3. Prywatna wiadomość DM (tylko jeśli mute został nałożony).
+        if muted:
+            try:
+                await author.send("ping ownera = mute 1h")
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+        # Wiadomość z pingiem została usunięta - nie przetwarzamy jej jako komendy.
+        return
+
+    await bot.process_commands(message)
 
 
 # =========================================================
