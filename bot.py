@@ -22,10 +22,13 @@ TICKET_LOGS_CHANNEL_ID = 1546954575989178538
 OPEN_TICKETS_CATEGORY_ID = 1547332001961607268
 CLOSED_TICKETS_CATEGORY_ID = 1563565970377678971
 OWNER_ID = 1137677233641762869
+BLACKLIST_ROLE_ID = 1547265693907419266
+CLOWN_ROLE_ID = 1568963083362107502
 
 DATA_DIR = "/app/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 TICKETS_FILE = os.path.join(DATA_DIR, "tickets.json")
+PERSISTENT_ROLES_FILE = os.path.join(DATA_DIR, "persistent_roles.json")
 
 # =========================================================
 # BOT
@@ -57,6 +60,11 @@ def save_json(filename, data):
 
 
 tickets_data = load_json(TICKETS_FILE, {})
+persistent_roles_data = load_json(PERSISTENT_ROLES_FILE, {"blacklist": [], "clown": []})
+if not isinstance(persistent_roles_data.get("blacklist"), list):
+    persistent_roles_data["blacklist"] = []
+if not isinstance(persistent_roles_data.get("clown"), list):
+    persistent_roles_data["clown"] = []
 MOD_ROLE_IDS = {STAFF_ROLE_ID, SUPPORT_ROLE_ID, TECHNIK_ROLE_ID}
 
 
@@ -215,18 +223,35 @@ async def delete_ticket_action(interaction: discord.Interaction):
         await interaction.response.send_message("Nie znaleziono danych tego ticketu.", ephemeral=True)
         return
 
-    await interaction.response.send_message("Tworzę transkrypcję i usuwam ticket.", ephemeral=True)
+    if info.get("deleting", False):
+        await interaction.response.send_message("Usuwanie tego ticketu już trwa.", ephemeral=True)
+        return
+
+    info["deleting"] = True
+    save_json(TICKETS_FILE, tickets_data)
+    await interaction.response.defer(ephemeral=True)
+    try:
+        await channel.send("**Ticket został zamknięty. Kanał zostanie usunięty za 15 sekund.**")
+    except (discord.Forbidden, discord.HTTPException):
+        info["deleting"] = False
+        save_json(TICKETS_FILE, tickets_data)
+        await interaction.followup.send("Nie udało się wysłać informacji na kanale. Ticket nie został usunięty.", ephemeral=True)
+        return
+
     transcript = await make_transcript(channel, info, interaction.user)
     logs_channel = guild.get_channel(TICKET_LOGS_CHANNEL_ID)
     if isinstance(logs_channel, discord.TextChannel):
         try:
             await logs_channel.send(
                 content=(f"**Transkrypcja ticketu**\nKanał: `{channel.name}`\n"
-                         f"Autor: {info.get('author_name', 'Nieznany')}\nUsunął: {interaction.user.name}"),
+                         f"Autor: {info.get('author_name', 'Nieznany')} (ID: `{info.get('author_id', 'Nieznane')}`)\n"
+                         f"Usunął: {interaction.user.name}"),
                 file=transcript,
             )
         except (discord.Forbidden, discord.HTTPException):
             pass
+
+    await asyncio.sleep(15)
     tickets_data.pop(str(channel.id), None)
     save_json(TICKETS_FILE, tickets_data)
     try:
@@ -245,6 +270,13 @@ class TicketPanelView(discord.ui.View):
         member = interaction.user
         if guild is None or not isinstance(member, discord.Member):
             await interaction.response.send_message("Ticket można utworzyć tylko na serwerze.", ephemeral=True)
+            return
+        if any(role.id == BLACKLIST_ROLE_ID for role in member.roles):
+            await interaction.response.send_message(
+                "Nie możesz stworzyć ticketu ze względu na rangę Blacklista. "
+                "Jeśli chcesz się jej pozbyć, musisz być grzeczny.",
+                ephemeral=True,
+            )
             return
         if ticket_open_count(member.id) >= 1:
             await interaction.response.send_message("Masz już otwarty ticket.", ephemeral=True)
@@ -324,6 +356,50 @@ async def ticket(ctx):
         await ctx.message.delete()
     except (discord.Forbidden, discord.HTTPException):
         pass
+
+
+@bot.command(name="bl")
+@moderator_only
+async def blacklist_user(ctx, member: discord.Member):
+    role = ctx.guild.get_role(BLACKLIST_ROLE_ID)
+    if role is None:
+        await ctx.send("Nie znaleziono rangi Blacklista.", delete_after=5)
+        return
+    if str(member.id) not in persistent_roles_data["blacklist"]:
+        persistent_roles_data["blacklist"].append(str(member.id))
+        save_json(PERSISTENT_ROLES_FILE, persistent_roles_data)
+    try:
+        if role not in member.roles:
+            await member.add_roles(role, reason=f"Blacklista nadana przez {ctx.author}")
+        await ctx.send(f"Nadano rangę Blacklista użytkownikowi {member.mention}.", delete_after=5)
+        try:
+            await ctx.message.delete()
+        except discord.Forbidden:
+            pass
+    except discord.Forbidden:
+        await ctx.send("Bot nie ma uprawnień do nadania rangi Blacklista.", delete_after=5)
+
+
+@bot.command(name="clown")
+@moderator_only
+async def clown_user(ctx, member: discord.Member):
+    role = ctx.guild.get_role(CLOWN_ROLE_ID)
+    if role is None:
+        await ctx.send("Nie znaleziono rangi Oszust.", delete_after=5)
+        return
+    if str(member.id) not in persistent_roles_data["clown"]:
+        persistent_roles_data["clown"].append(str(member.id))
+        save_json(PERSISTENT_ROLES_FILE, persistent_roles_data)
+    try:
+        if role not in member.roles:
+            await member.add_roles(role, reason=f"Ranga Oszust nadana przez {ctx.author}")
+        await ctx.send(f"Nadano rangę Oszust użytkownikowi {member.mention}.", delete_after=5)
+        try:
+            await ctx.message.delete()
+        except discord.Forbidden:
+            pass
+    except discord.Forbidden:
+        await ctx.send("Bot nie ma uprawnień do nadania rangi Oszust.", delete_after=5)
 
 
 @bot.command(name="clear")
@@ -470,6 +546,25 @@ async def kick(ctx, member: discord.Member):
 # Zwykły reply na wiadomość ownera nie zawiera takiego tekstu w content,
 # więc nie powoduje kary.
 OWNER_MENTION_PATTERN = re.compile(rf"<@!?{OWNER_ID}>")
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    """Przywraca zapisane rangi po ponownym dołączeniu użytkownika."""
+    roles_to_restore = []
+    if str(member.id) in persistent_roles_data["blacklist"]:
+        role = member.guild.get_role(BLACKLIST_ROLE_ID)
+        if role is not None:
+            roles_to_restore.append(role)
+    if str(member.id) in persistent_roles_data["clown"]:
+        role = member.guild.get_role(CLOWN_ROLE_ID)
+        if role is not None:
+            roles_to_restore.append(role)
+    if roles_to_restore:
+        try:
+            await member.add_roles(*roles_to_restore, reason="Przywrócenie zapisanych rang po ponownym dołączeniu")
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            print(f"[RANGI] Nie udało się przywrócić rang użytkownika {member} ({member.id}): {exc}")
 
 
 @bot.event
