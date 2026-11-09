@@ -105,36 +105,36 @@ def can_manage_ticket(member):
     return has_any_role(member, MOD_ROLE_IDS)
 
 
-async def make_transcript(channel, ticket_info, deleted_by):
+async def make_transcript(channel, ticket_info, deleted_by, reason):
+    """Buduje plik TXT z transkrypcją. Zgłasza wyjątek, jeśli nie uda się pobrać pełnej historii."""
     opened_at = ticket_info.get("opened_at", "Nieznana data")
+    author_name = ticket_info.get("username") or ticket_info.get("author_name", "Nieznany")
     lines = [
         "Sicario - transkrypcja ticketu",
         "=" * 45,
         f"Kanał: {channel.name}",
-        f"Autor: {ticket_info.get('author_name', 'Nieznany')}",
         f"ID autora: {ticket_info.get('author_id', 'Nieznane')}",
+        f"Nazwa autora: {author_name}",
+        f"Powód zamknięcia: {reason}",
+        f"Usunął: {deleted_by.name} ({deleted_by.id})",
         f"Data otwarcia: {opened_at}",
-        f"Usunął: {deleted_by} ({deleted_by.id})",
         f"Data eksportu: {datetime.now(timezone.utc).isoformat()}",
         "=" * 45,
         "",
     ]
-    try:
-        async for message in channel.history(limit=None, oldest_first=True):
-            stamp = message.created_at.strftime("%d.%m.%Y %H:%M:%S UTC")
-            lines.append(f"[{stamp}] {message.author} ({message.author.id}):")
-            if message.content:
-                lines.append(message.content)
-            for attachment in message.attachments:
-                lines.append(f"Załącznik: {attachment.url}")
-            for embed in message.embeds:
-                if embed.title:
-                    lines.append(f"Embed - tytuł: {embed.title}")
-                if embed.description:
-                    lines.append(f"Embed - treść: {embed.description}")
-            lines.append("")
-    except discord.HTTPException:
-        lines.append("[Nie udało się pobrać pełnej historii kanału]")
+    async for message in channel.history(limit=None, oldest_first=True):
+        stamp = message.created_at.strftime("%d.%m.%Y %H:%M:%S UTC")
+        lines.append(f"[{stamp}] {message.author} ({message.author.id}):")
+        if message.content:
+            lines.append(message.content)
+        for attachment in message.attachments:
+            lines.append(f"Załącznik: {attachment.filename} - {attachment.url}")
+        for embed in message.embeds:
+            if embed.title:
+                lines.append(f"Embed - tytuł: {embed.title}")
+            if embed.description:
+                lines.append(f"Embed - treść: {embed.description}")
+        lines.append("")
     content = "\n".join(lines)
     filename = f"ticket-{datetime.now(timezone.utc).strftime('%d%m%y')}-{channel.id}.txt"
     return discord.File(io.BytesIO(content.encode("utf-8")), filename=filename)
@@ -210,6 +210,19 @@ class TicketView(discord.ui.View):
         await delete_ticket_action(interaction)
 
 
+class DeleteTicketModal(discord.ui.Modal, title="Powód zamknięcia ticketu"):
+    reason = discord.ui.TextInput(
+        label="Powód zamknięcia",
+        placeholder="Np. zakupił konto z leviathanem",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await perform_ticket_delete(interaction, str(self.reason.value).strip())
+
+
 async def delete_ticket_action(interaction: discord.Interaction):
     guild = interaction.guild
     channel = interaction.channel
@@ -227,35 +240,75 @@ async def delete_ticket_action(interaction: discord.Interaction):
         await interaction.response.send_message("Usuwanie tego ticketu już trwa.", ephemeral=True)
         return
 
+    await interaction.response.send_modal(DeleteTicketModal())
+
+
+async def perform_ticket_delete(interaction: discord.Interaction, reason: str):
+    guild = interaction.guild
+    channel = interaction.channel
+    if guild is None or not isinstance(channel, discord.TextChannel):
+        return
+    if not can_manage_ticket(interaction.user):
+        await interaction.response.send_message("Nie masz uprawnień do usunięcia tego ticketu.", ephemeral=True)
+        return
+    info = tickets_data.get(str(channel.id))
+    if info is None:
+        await interaction.response.send_message("Nie znaleziono danych tego ticketu.", ephemeral=True)
+        return
+    if info.get("deleting", False):
+        await interaction.response.send_message("Usuwanie tego ticketu już trwa.", ephemeral=True)
+        return
+    if not reason:
+        await interaction.response.send_message("Powód zamknięcia jest wymagany.", ephemeral=True)
+        return
+
     info["deleting"] = True
     save_json(TICKETS_FILE, tickets_data)
     await interaction.response.defer(ephemeral=True)
+
+    def abort_delete():
+        info["deleting"] = False
+        save_json(TICKETS_FILE, tickets_data)
+
+    # Transkrypcja musi zostać poprawnie zapisana, zanim ticket zostanie usunięty.
+    try:
+        transcript = await make_transcript(channel, info, interaction.user, reason)
+    except (discord.Forbidden, discord.HTTPException):
+        abort_delete()
+        await interaction.followup.send("Nie udało się pobrać historii ticketu. Ticket nie został usunięty.", ephemeral=True)
+        return
+
+    logs_channel = guild.get_channel(TICKET_LOGS_CHANNEL_ID)
+    if not isinstance(logs_channel, discord.TextChannel):
+        abort_delete()
+        await interaction.followup.send("Nie znaleziono kanału logów. Ticket nie został usunięty.", ephemeral=True)
+        return
+
+    author_login = info.get("username") or info.get("author_name", "Nieznany")
+    try:
+        await logs_channel.send(
+            content=(f"**Transkrypcja ticketu**\n"
+                     f"Kanał: \"{channel.name}\"\n"
+                     f"ID autora: \"{info.get('author_id', 'Nieznane')}\" ({author_login})\n"
+                     f"Powód zamknięcia: '{reason}'\n"
+                     f"Usunął: {interaction.user.name}"),
+            file=transcript,
+        )
+    except (discord.Forbidden, discord.HTTPException):
+        abort_delete()
+        await interaction.followup.send("Nie udało się zapisać transkrypcji w kanale logów. Ticket nie został usunięty.", ephemeral=True)
+        return
+
     try:
         await channel.send("**Ticket został zamknięty. Kanał zostanie usunięty za 15 sekund.**")
     except (discord.Forbidden, discord.HTTPException):
-        info["deleting"] = False
-        save_json(TICKETS_FILE, tickets_data)
-        await interaction.followup.send("Nie udało się wysłać informacji na kanale. Ticket nie został usunięty.", ephemeral=True)
-        return
-
-    transcript = await make_transcript(channel, info, interaction.user)
-    logs_channel = guild.get_channel(TICKET_LOGS_CHANNEL_ID)
-    if isinstance(logs_channel, discord.TextChannel):
-        try:
-            await logs_channel.send(
-                content=(f"**Transkrypcja ticketu**\nKanał: `{channel.name}`\n"
-                         f"Autor: {info.get('author_name', 'Nieznany')} (ID: `{info.get('author_id', 'Nieznane')}`)\n"
-                         f"Usunął: {interaction.user.name}"),
-                file=transcript,
-            )
-        except (discord.Forbidden, discord.HTTPException):
-            pass
+        pass
 
     await asyncio.sleep(15)
     tickets_data.pop(str(channel.id), None)
     save_json(TICKETS_FILE, tickets_data)
     try:
-        await channel.delete(reason=f"Ticket usunięty przez {interaction.user}")
+        await channel.delete(reason=f"Ticket usunięty przez {interaction.user}: {reason}"[:512])
     except (discord.Forbidden, discord.NotFound, discord.HTTPException):
         pass
 
