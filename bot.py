@@ -4,17 +4,14 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-
 import discord
 from discord.ext import commands
-
 # =========================================================
 # KONFIGURACJA
 # =========================================================
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = "!"
 EMBED_COLOR = discord.Color(0x660F0F)
-
 STAFF_ROLE_ID = 1546584318615355403
 SUPPORT_ROLE_ID = 1546584450765299864  # dawne TT Mod
 TECHNIK_ROLE_ID = 1551677652321046721
@@ -24,12 +21,10 @@ CLOSED_TICKETS_CATEGORY_ID = 1563565970377678971
 OWNER_ID = 1137677233641762869
 BLACKLIST_ROLE_ID = 1547265693907419266
 CLOWN_ROLE_ID = 1568963083362107502
-
 DATA_DIR = "/app/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 TICKETS_FILE = os.path.join(DATA_DIR, "tickets.json")
 PERSISTENT_ROLES_FILE = os.path.join(DATA_DIR, "persistent_roles.json")
-
 # =========================================================
 # BOT
 # =========================================================
@@ -37,8 +32,6 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
-
-
 def load_json(filename, default):
     if not os.path.exists(filename):
         save_json(filename, default)
@@ -49,16 +42,12 @@ def load_json(filename, default):
             return data if isinstance(data, dict) else default
     except (json.JSONDecodeError, OSError):
         return default
-
-
 def save_json(filename, data):
     try:
         with open(filename, "w", encoding="utf-8") as file:
             json.dump(data, file, indent=4, ensure_ascii=False)
     except OSError as exc:
         print(f"Nie udało się zapisać pliku {filename}: {exc}")
-
-
 tickets_data = load_json(TICKETS_FILE, {})
 persistent_roles_data = load_json(PERSISTENT_ROLES_FILE, {"blacklist": [], "clown": []})
 if not isinstance(persistent_roles_data.get("blacklist"), list):
@@ -66,45 +55,29 @@ if not isinstance(persistent_roles_data.get("blacklist"), list):
 if not isinstance(persistent_roles_data.get("clown"), list):
     persistent_roles_data["clown"] = []
 MOD_ROLE_IDS = {STAFF_ROLE_ID, SUPPORT_ROLE_ID, TECHNIK_ROLE_ID}
-
-
 def has_any_role(member, role_ids=MOD_ROLE_IDS):
     return any(role.id in role_ids for role in getattr(member, "roles", []))
-
-
 def command_check(role_ids):
     async def predicate(ctx):
         return ctx.guild is not None and has_any_role(ctx.author, role_ids)
     return commands.check(predicate)
-
-
 staff_only = command_check({STAFF_ROLE_ID, TECHNIK_ROLE_ID})
 moderator_only = command_check(MOD_ROLE_IDS)
-
-
 def clean_username(username):
     username = username.lower()
     username = re.sub(r"[^a-z0-9ąćęłńóśźż_-]", "-", username)
     username = re.sub(r"-+", "-", username).strip("-_")
     return (username or "uzytkownik")[:80]
-
-
 def ticket_open_count(user_id):
     return sum(
         1 for item in tickets_data.values()
         if str(item.get("author_id")) == str(user_id) and item.get("open", True)
     )
-
-
 def get_category(guild, category_id):
     category = guild.get_channel(category_id)
     return category if isinstance(category, discord.CategoryChannel) else None
-
-
 def can_manage_ticket(member):
     return has_any_role(member, MOD_ROLE_IDS)
-
-
 async def make_transcript(channel, ticket_info, deleted_by, reason):
     """Buduje plik TXT z transkrypcją. Zgłasza wyjątek, jeśli nie uda się pobrać pełnej historii."""
     opened_at = ticket_info.get("opened_at", "Nieznana data")
@@ -138,22 +111,16 @@ async def make_transcript(channel, ticket_info, deleted_by, reason):
     content = "\n".join(lines)
     filename = f"ticket-{datetime.now(timezone.utc).strftime('%d%m%y')}-{channel.id}.txt"
     return discord.File(io.BytesIO(content.encode("utf-8")), filename=filename)
-
-
 class ClosedTicketView(discord.ui.View):
     """Po zamknięciu dostępny jest wyłącznie przycisk usunięcia."""
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="Usuń Ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_delete")
     async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await delete_ticket_action(interaction)
-
-
 class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="Zamknij Ticket", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="ticket_close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
@@ -170,12 +137,10 @@ class TicketView(discord.ui.View):
         if not info.get("open", True):
             await interaction.response.send_message("Ten ticket jest już zamknięty.", ephemeral=True)
             return
-
         closed_category = get_category(guild, CLOSED_TICKETS_CATEGORY_ID)
         if closed_category is None:
             await interaction.response.send_message("Nie znaleziono kategorii CLOSED TICKETS.", ephemeral=True)
             return
-
         creator = guild.get_member(int(info.get("author_id", 0)))
         overwrites = channel.overwrites
         if creator is not None:
@@ -184,7 +149,6 @@ class TicketView(discord.ui.View):
             role = guild.get_role(role_id)
             if role is not None:
                 overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_messages=True)
-
         new_name = f"closed-{clean_username(info.get('username', info.get('author_name', 'uzytkownik')))}"[:100]
         try:
             await channel.edit(category=closed_category, name=new_name, overwrites=overwrites, reason=f"Ticket zamknięty przez {interaction.user}")
@@ -194,7 +158,6 @@ class TicketView(discord.ui.View):
         except discord.HTTPException:
             await interaction.response.send_message("Nie udało się zamknąć ticketu.", ephemeral=True)
             return
-
         info["open"] = False
         info["closed_by"] = interaction.user.id
         info["closed_at"] = datetime.now(timezone.utc).isoformat()
@@ -204,12 +167,9 @@ class TicketView(discord.ui.View):
             await interaction.message.edit(view=ClosedTicketView())
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
-
     @discord.ui.button(label="Usuń Ticket", style=discord.ButtonStyle.secondary, custom_id="ticket_delete")
     async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await delete_ticket_action(interaction)
-
-
 class DeleteTicketModal(discord.ui.Modal, title="Powód zamknięcia ticketu"):
     reason = discord.ui.TextInput(
         label="Powód zamknięcia",
@@ -218,11 +178,8 @@ class DeleteTicketModal(discord.ui.Modal, title="Powód zamknięcia ticketu"):
         required=True,
         max_length=500,
     )
-
     async def on_submit(self, interaction: discord.Interaction):
         await perform_ticket_delete(interaction, str(self.reason.value).strip())
-
-
 async def delete_ticket_action(interaction: discord.Interaction):
     guild = interaction.guild
     channel = interaction.channel
@@ -235,14 +192,10 @@ async def delete_ticket_action(interaction: discord.Interaction):
     if info is None:
         await interaction.response.send_message("Nie znaleziono danych tego ticketu.", ephemeral=True)
         return
-
     if info.get("deleting", False):
         await interaction.response.send_message("Usuwanie tego ticketu już trwa.", ephemeral=True)
         return
-
     await interaction.response.send_modal(DeleteTicketModal())
-
-
 async def perform_ticket_delete(interaction: discord.Interaction, reason: str):
     guild = interaction.guild
     channel = interaction.channel
@@ -261,15 +214,12 @@ async def perform_ticket_delete(interaction: discord.Interaction, reason: str):
     if not reason:
         await interaction.response.send_message("Powód zamknięcia jest wymagany.", ephemeral=True)
         return
-
     info["deleting"] = True
     save_json(TICKETS_FILE, tickets_data)
     await interaction.response.defer(ephemeral=True)
-
     def abort_delete():
         info["deleting"] = False
         save_json(TICKETS_FILE, tickets_data)
-
     # Transkrypcja musi zostać poprawnie zapisana, zanim ticket zostanie usunięty.
     try:
         transcript = await make_transcript(channel, info, interaction.user, reason)
@@ -277,33 +227,31 @@ async def perform_ticket_delete(interaction: discord.Interaction, reason: str):
         abort_delete()
         await interaction.followup.send("Nie udało się pobrać historii ticketu. Ticket nie został usunięty.", ephemeral=True)
         return
-
     logs_channel = guild.get_channel(TICKET_LOGS_CHANNEL_ID)
     if not isinstance(logs_channel, discord.TextChannel):
         abort_delete()
         await interaction.followup.send("Nie znaleziono kanału logów. Ticket nie został usunięty.", ephemeral=True)
         return
-
     author_login = info.get("username") or info.get("author_name", "Nieznany")
     try:
         await logs_channel.send(
-            content=(f"**Transkrypcja ticketu**\n"
-                     f"Kanał: \"{channel.name}\"\n"
-                     f"ID autora: \"{info.get('author_id', 'Nieznane')}\" ({author_login})\n"
-                     f"Powód zamknięcia: '{reason}'\n"
-                     f"Usunął: {interaction.user.name}"),
+            content=(
+                f"**Transkrypcja ticketu**\n"
+                f"Kanał: `{channel.name}`\n"
+                f"ID autora: `{info.get('author_id', 'Nieznane')}` ({author_login})\n"
+                f"Powód zamknięcia: `{reason}`\n"
+                f"Usunął: `{interaction.user.name}`"
+            ),
             file=transcript,
         )
     except (discord.Forbidden, discord.HTTPException):
         abort_delete()
         await interaction.followup.send("Nie udało się zapisać transkrypcji w kanale logów. Ticket nie został usunięty.", ephemeral=True)
         return
-
     try:
         await channel.send("**Ticket został zamknięty. Kanał zostanie usunięty za 15 sekund.**")
     except (discord.Forbidden, discord.HTTPException):
         pass
-
     await asyncio.sleep(15)
     tickets_data.pop(str(channel.id), None)
     save_json(TICKETS_FILE, tickets_data)
@@ -311,12 +259,9 @@ async def perform_ticket_delete(interaction: discord.Interaction, reason: str):
         await channel.delete(reason=f"Ticket usunięty przez {interaction.user}: {reason}"[:512])
     except (discord.Forbidden, discord.NotFound, discord.HTTPException):
         pass
-
-
 class TicketPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="Stwórz ticket", style=discord.ButtonStyle.danger, custom_id="ticket_create")
     async def create_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
@@ -338,7 +283,6 @@ class TicketPanelView(discord.ui.View):
         if category is None:
             await interaction.response.send_message("Nie znaleziono kategorii TICKETS.", ephemeral=True)
             return
-
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, attach_files=True, embed_links=True),
@@ -350,7 +294,6 @@ class TicketPanelView(discord.ui.View):
         bot_member = guild.me
         if bot_member is not None:
             overwrites[bot_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True, manage_messages=True, attach_files=True, embed_links=True)
-
         username = clean_username(member.name)  # Discord username, nie nick serwerowy
         try:
             channel = await guild.create_text_channel(
@@ -365,7 +308,6 @@ class TicketPanelView(discord.ui.View):
         except discord.HTTPException:
             await interaction.response.send_message("Nie udało się utworzyć ticketu.", ephemeral=True)
             return
-
         now = datetime.now(timezone.utc)
         tickets_data[str(channel.id)] = {
             "author_id": member.id,
@@ -375,7 +317,6 @@ class TicketPanelView(discord.ui.View):
             "open": True,
         }
         save_json(TICKETS_FILE, tickets_data)
-
         try:
             # Instrukcja i przyciski w embedzie z kolorem używanym w pozostałych embedach.
             ticket_embed = discord.Embed(
@@ -391,8 +332,6 @@ class TicketPanelView(discord.ui.View):
         except discord.HTTPException:
             pass
         await interaction.response.send_message(f"Ticket został utworzony: {channel.mention}", ephemeral=True)
-
-
 # =========================================================
 # KOMENDY
 # =========================================================
@@ -409,8 +348,6 @@ async def ticket(ctx):
         await ctx.message.delete()
     except (discord.Forbidden, discord.HTTPException):
         pass
-
-
 @bot.command(name="bl")
 @moderator_only
 async def blacklist_user(ctx, member: discord.Member):
@@ -431,8 +368,6 @@ async def blacklist_user(ctx, member: discord.Member):
             pass
     except discord.Forbidden:
         await ctx.send("Bot nie ma uprawnień do nadania rangi Blacklista.", delete_after=5)
-
-
 @bot.command(name="clown")
 @moderator_only
 async def clown_user(ctx, member: discord.Member):
@@ -453,8 +388,6 @@ async def clown_user(ctx, member: discord.Member):
             pass
     except discord.Forbidden:
         await ctx.send("Bot nie ma uprawnień do nadania rangi Oszust.", delete_after=5)
-
-
 @bot.command(name="clear")
 @moderator_only
 async def clear(ctx, *args):
@@ -497,8 +430,6 @@ async def clear(ctx, *args):
                 break
     except discord.Forbidden:
         await ctx.send("Bot nie ma uprawnień do usuwania wiadomości.", delete_after=4)
-
-
 @bot.command(name="mute")
 @moderator_only
 async def mute(ctx, member: discord.Member, duration: str):
@@ -533,8 +464,6 @@ async def mute(ctx, member: discord.Member, duration: str):
             pass
     except discord.Forbidden:
         await ctx.send("Bot nie ma uprawnień do timeoutu tej osoby.", delete_after=4)
-
-
 @bot.command(name="ban")
 @moderator_only
 async def ban(ctx, member: discord.Member):
@@ -561,8 +490,6 @@ async def ban(ctx, member: discord.Member):
         await ctx.send("Bot nie ma uprawnień do zbanowania tej osoby.", delete_after=4)
     except discord.HTTPException:
         await ctx.send("Nie udało się zbanować tego użytkownika.", delete_after=4)
-
-
 @bot.command(name="kick")
 @moderator_only
 async def kick(ctx, member: discord.Member):
@@ -590,8 +517,6 @@ async def kick(ctx, member: discord.Member):
         await ctx.send("Bot nie ma uprawnień do wyrzucenia tej osoby.", delete_after=4)
     except discord.HTTPException:
         await ctx.send("Nie udało się wyrzucić tego użytkownika.", delete_after=4)
-
-
 # =========================================================
 # ANTY-PING OWNERA
 # =========================================================
@@ -599,8 +524,6 @@ async def kick(ctx, member: discord.Member):
 # Zwykły reply na wiadomość ownera nie zawiera takiego tekstu w content,
 # więc nie powoduje kary.
 OWNER_MENTION_PATTERN = re.compile(rf"<@!?{OWNER_ID}>")
-
-
 @bot.event
 async def on_member_join(member: discord.Member):
     """Przywraca zapisane rangi po ponownym dołączeniu użytkownika."""
@@ -618,33 +541,26 @@ async def on_member_join(member: discord.Member):
             await member.add_roles(*roles_to_restore, reason="Przywrócenie zapisanych rang po ponownym dołączeniu")
         except (discord.Forbidden, discord.HTTPException) as exc:
             print(f"[RANGI] Nie udało się przywrócić rang użytkownika {member} ({member.id}): {exc}")
-
-
 @bot.event
 async def on_message(message: discord.Message):
     # Wiadomości od botów (w tym własne) są ignorowane - nie karzemy botów.
     if message.author.bot:
         return
-
     # Wiadomości prywatne - tylko przekazanie do komend.
     if message.guild is None or not isinstance(message.author, discord.Member):
         await bot.process_commands(message)
         return
-
     # Owner nigdy nie jest karany.
     if message.author.id == OWNER_ID:
         await bot.process_commands(message)
         return
-
     if OWNER_MENTION_PATTERN.search(message.content or ""):
         author = message.author
-
         # 1. Usunięcie wiadomości z pingiem.
         try:
             await message.delete()
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
-
         # 2. Timeout na dokładnie 1 godzinę.
         muted = False
         try:
@@ -652,20 +568,15 @@ async def on_message(message: discord.Message):
             muted = True
         except (discord.Forbidden, discord.HTTPException):
             print(f"[ANTY-PING] Nie udało się nałożyć timeoutu na {author} ({author.id}).")
-
         # 3. Prywatna wiadomość DM (tylko jeśli mute został nałożony).
         if muted:
             try:
                 await author.send("ping ownera = mute 1h")
             except (discord.Forbidden, discord.HTTPException):
                 pass
-
         # Wiadomość z pingiem została usunięta - nie przetwarzamy jej jako komendy.
         return
-
     await bot.process_commands(message)
-
-
 # =========================================================
 # BŁĘDY I URUCHOMIENIE
 # =========================================================
@@ -683,8 +594,6 @@ async def on_command_error(ctx, error):
         await ctx.send("Nieprawidłowy argument.", delete_after=4)
         return
     print(f"[BŁĄD KOMENDY] {type(error).__name__}: {error}")
-
-
 @bot.event
 async def on_ready():
     if not getattr(bot, "_persistent_views_added", False):
@@ -694,9 +603,6 @@ async def on_ready():
         bot._persistent_views_added = True
     print(f"Zalogowano jako {bot.user}")
     print(f"Połączono z {len(bot.guilds)} serwerami")
-
-
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN nie jest ustawiony w zmiennych środowiskowych.")
-
 bot.run(TOKEN)
